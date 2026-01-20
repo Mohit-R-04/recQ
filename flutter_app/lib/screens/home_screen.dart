@@ -40,18 +40,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lost & Found'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () {
-              Navigator.of(context).pushNamed('/profile');
-            },
-          ),
-        ],
-      ),
+    return WillPopScope(
+      onWillPop: () async {
+        // Prevent back button - user must logout to return to login
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Lost & Found'),
+          automaticallyImplyLeading: false, // Remove back button from app bar
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.person),
+              onPressed: () {
+                Navigator.of(context).pushNamed('/profile');
+              },
+            ),
+          ],
+        ),
       body: Column(
         children: [
           // Filter chips
@@ -281,6 +287,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    );
-  }
-}
+    ); // WillPopScope
+  } // build
+} // _HomeScreenState
