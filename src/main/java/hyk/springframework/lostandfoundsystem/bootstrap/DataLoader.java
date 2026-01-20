@@ -75,14 +75,14 @@ public class DataLoader implements CommandLineRunner {
                 User admin = userRepository.save(
                                 User.builder()
                                                 .username("admin")
-                                                .password(passwordEncoder.encode("Admin11@"))
-                                                .confirmedPassword("Admin11@")
+                                                .password(passwordEncoder.encode("Admin@123"))
+                                                .confirmedPassword("Admin@123")
                                                 .role(adminRole)
-                                                .fullName("Admin")
-                                                .phoneNumber("9231456789")
-                                                .email("hykadmin@gmail.com")
-                                                .address(Address.builder().city("Mudon").state("MON")
-                                                                .street("Aung Thiri Street").build())
+                                                .fullName("RecQ Administrator")
+                                                .phoneNumber("8489551332")
+                                                .email("recq.noreply@gmail.com")
+                                                .address(Address.builder().city("Admin City").state("AC")
+                                                                .street("Admin Street").build())
                                                 .build());
 
                 userRepository.save(admin);

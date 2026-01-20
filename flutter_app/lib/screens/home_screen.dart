@@ -38,13 +38,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        // Prevent back button - user must logout to return to login
-        return false;
-      },
+    return PopScope(
+      canPop: false, // Prevent back button - user must logout to return to login
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Lost & Found'),
@@ -134,8 +132,8 @@ class _HomeScreenState extends State<HomeScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Report Item'),
       ),
-    );
-  }
+    )); // PopScope
+  } // build
 
   Widget _buildFilterChip(String label, String value) {
     final isSelected = _filter == value;
@@ -287,6 +285,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    ); // WillPopScope
+    ); // Card
   } // build
 } // _HomeScreenState

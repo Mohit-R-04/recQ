@@ -349,7 +349,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ),
                                 ),
                                 Text(
-                                  'Password: Admin11@',
+                                  'Password: Admin@123',
                                   style: TextStyle(
                                     color: Colors.blue[900],
                                     fontSize: 12,
