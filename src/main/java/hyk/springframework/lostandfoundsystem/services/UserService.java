@@ -11,6 +11,10 @@ public interface UserService {
 
     User findUserById(Integer id);
 
+    User findByUsername(String username);
+
+    User findByEmail(String email);
+
     boolean isUsernameAlreadyExisted(String username, Integer userId);
 
     boolean isEmailAlreadyExisted(String email, Integer userId);

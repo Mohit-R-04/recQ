@@ -39,6 +39,18 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public User findByUsername(String username) {
+        log.debug("Service - Find user by username: " + username);
+        return userRepository.findByUsername(username).orElse(null);
+    }
+
+    @Override
+    public User findByEmail(String email) {
+        log.debug("Service - Find user by email: " + email);
+        return userRepository.findByEmail(email).orElse(null);
+    }
+
+    @Override
     public boolean isUsernameAlreadyExisted(String username, Integer userId) {
         log.debug("Service - Check duplicate username");
         if (userId > 0) {
@@ -65,7 +77,8 @@ public class UserServiceImpl implements UserService {
 
         // Set "USER" as default role
         if (user.getRoles() == null || user.getRoles().size() == 0) {
-            // In order to avoid UnsupportedOperationException, don't use "Set.of" to create role set
+            // In order to avoid UnsupportedOperationException, don't use "Set.of" to create
+            // role set
             Set<Role> roles = new HashSet();
             roles.add(roleRepository.findByName("USER").orElseThrow(() -> {
                 throw new ResourceNotFoundException("USER role not found");

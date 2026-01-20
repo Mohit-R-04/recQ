@@ -57,11 +57,11 @@ public class User implements UserDetails {
      * Collections are lazy-loaded by default
      * Or use @Transactional of spring framework
      */
-    @ManyToMany(cascade = {CascadeType.MERGE}, fetch = FetchType.EAGER)
+    @ManyToMany(cascade = { CascadeType.MERGE }, fetch = FetchType.EAGER)
     // owning side
-    @JoinTable(name = "user_role",
-            joinColumns = {@JoinColumn(name = "USER_ID", referencedColumnName = "ID")},
-            inverseJoinColumns = {@JoinColumn(name = "ROLE_ID", referencedColumnName = "ID")})
+    @JoinTable(name = "user_role", joinColumns = {
+            @JoinColumn(name = "USER_ID", referencedColumnName = "ID") }, inverseJoinColumns = {
+                    @JoinColumn(name = "ROLE_ID", referencedColumnName = "ID") })
     private Set<Role> roles; // plural form
 
     @Builder.Default
