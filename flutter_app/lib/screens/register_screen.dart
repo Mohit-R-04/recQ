@@ -232,11 +232,18 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                             decoration: const InputDecoration(
                               labelText: 'Full Name',
                               prefixIcon: Icon(Icons.person),
+                              helperText: 'Must be 5-50 characters',
                             ),
                             enabled: !_isLoading,
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Please enter your full name';
+                              }
+                              if (value.trim().length < 5) {
+                                return 'Full name must be at least 5 characters';
+                              }
+                              if (value.trim().length > 50) {
+                                return 'Full name must not exceed 50 characters';
                               }
                               return null;
                             },
@@ -249,14 +256,18 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                             decoration: const InputDecoration(
                               labelText: 'Username',
                               prefixIcon: Icon(Icons.account_circle),
+                              helperText: 'Must be 5-30 characters',
                             ),
                             enabled: !_isLoading,
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Please enter a username';
                               }
-                              if (value.length < 3) {
-                                return 'Username must be at least 3 characters';
+                              if (value.trim().length < 5) {
+                                return 'Username must be at least 5 characters';
+                              }
+                              if (value.trim().length > 30) {
+                                return 'Username must not exceed 30 characters';
                               }
                               return null;
                             },
@@ -291,11 +302,16 @@ class _RegisterScreenState extends State<RegisterScreen> with SingleTickerProvid
                             decoration: const InputDecoration(
                               labelText: 'Phone Number',
                               prefixIcon: Icon(Icons.phone),
+                              helperText: 'Indian format: +919123456789 or 9123456789',
                             ),
                             enabled: !_isLoading,
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Please enter your phone number';
+                              }
+                              // Indian phone number validation: +919123456789, 919123456789, 09123456789, or 9123456789
+                              if (!RegExp(r'^(\+91|91|0)?[6-9]\d{9}$').hasMatch(value.trim())) {
+                                return 'Enter valid Indian phone number';
                               }
                               return null;
                             },
