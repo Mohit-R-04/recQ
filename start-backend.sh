@@ -42,7 +42,7 @@ echo "   Backend will run on http://localhost:8080"
 echo ""
 
 # Start backend
-./mvnw spring-boot:run
+mvn spring-boot:run
 
 echo ""
 echo "========================================="

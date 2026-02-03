@@ -100,8 +100,8 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
 
     final provider = Provider.of<AppProvider>(context, listen: false);
 
-    // For web, create File from XFile path, for mobile use _imageFile
-    final fileToUpload = kIsWeb ? File(_pickedFile!.path) : _imageFile!;
+    // For web, pass XFile directly, for mobile use File
+    final fileToUpload = kIsWeb ? _pickedFile! : _imageFile!;
 
     // Upload image and classify in parallel
     final results = await Future.wait([

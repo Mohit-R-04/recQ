@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' if (dart.library.html) 'dart:html'; // Conditional import
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
@@ -341,8 +341,13 @@ class ApiService {
       final headers = await _headers;
       request.headers.addAll(headers);
 
+      // Handle mobile/desktop upload (File from dart:io, but we used conditional import)
+      // If we are here, kIsWeb is false, so dart:io should be available?
+      // But conditional import imports dart:html on web.
+      // On mobile, it imports dart:io.
+      // We should treat imageFile as dynamic and assume it has path if not on web.
       request.files.add(
-        await http.MultipartFile.fromPath('file', imageFile.path),
+        await http.MultipartFile.fromPath('file', (imageFile as dynamic).path),
       );
 
       final streamedResponse = await request.send();
@@ -390,7 +395,7 @@ class ApiService {
 
   /// Classify an image using TensorFlow Lite (on-device)
   /// Returns predicted class, confidence, and suggested backend category
-  Future<Map<String, dynamic>> classifyImage(File imageFile) async {
+  Future<Map<String, dynamic>> classifyImage(dynamic imageFile) async {
     try {
       // Use TFLite for on-device inference
       final result = await _tfliteClassifier.classifyImage(imageFile);

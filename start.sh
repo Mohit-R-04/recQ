@@ -54,7 +54,7 @@ if lsof -Pi :8080 -sTCP:LISTEN -t >/dev/null ; then
 fi
 
 # Start backend
-./mvnw spring-boot:run > backend.log 2>&1 &
+mvn spring-boot:run > backend.log 2>&1 &
 BACKEND_PID=$!
 echo "✅ Backend started (PID: $BACKEND_PID)"
 echo "   Logs: tail -f backend.log"
