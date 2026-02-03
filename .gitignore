@@ -1,0 +1,207 @@
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+.env.maps
+.DS_Store
+
+### Environment & Configuration ###
+.env
+.env.local
+.env.*.local
+EMAIL_CONFIG_TEMPLATE.properties
+*.properties.local
+
+### Flutter ###
+flutter_app/.dart_tool/
+flutter_app/.flutter-plugins
+flutter_app/.flutter-plugins-dependencies
+flutter_app/.packages
+flutter_app/.pub-cache/
+flutter_app/.pub/
+flutter_app/build/
+flutter_app/pubspec.lock
+flutter_app/.metadata
+flutter_app/coverage/
+flutter_app/doc/api/
+
+### Android Build ###
+flutter_app/android/.gradle/
+flutter_app/android/gradlew
+flutter_app/android/gradlew.bat
+flutter_app/android/local.properties
+flutter_app/android/GeneratedPluginRegistrant.java
+flutter_app/android/app/debug/
+flutter_app/android/app/release/
+flutter_app/android/app/profile/
+
+### iOS Build ###
+flutter_app/ios/.symlinks/
+flutter_app/ios/.generated/
+flutter_app/ios/Flutter/Flutter.framework/
+flutter_app/ios/Flutter/Flutter.podspec
+flutter_app/ios/Flutter/Flutter.xcframework/
+flutter_app/ios/Podfile.lock
+flutter_app/ios/Runner.xcodeproj/xcuserdata/
+flutter_app/ios/Runner.xcworkspace/xcuserdata/
+flutter_app/ios/Pods/
+
+### Web Build ###
+flutter_app/web/assets/
+flutter_app/web/plugins/
+flutter_app/web/js_interop/
+
+### Linux Build ###
+flutter_app/linux/flutter/generated_plugin_registrant.cc
+flutter_app/linux/flutter/generated_plugin_registrant.h
+flutter_app/linux/flutter/generated_plugins.cmake
+flutter_app/build/linux/
+
+### macOS Build ###
+flutter_app/macos/Flutter/GeneratedPluginRegistrant.swift
+flutter_app/macos/Pods/
+flutter_app/build/macos/
+
+### Windows Build ###
+flutter_app/windows/flutter/generated_plugin_registrant.cc
+flutter_app/windows/flutter/generated_plugin_registrant.h
+flutter_app/windows/flutter/generated_plugins.cmake
+flutter_app/build/windows/
+
+### Python & ML Service ###
+ml_service/__pycache__/
+ml_service/.venv/
+ml_service/venv/
+ml_service/*.pyc
+ml_service/*.pyo
+ml_service/*.pyd
+ml_service/.Python
+ml_service/env/
+ml_service/.pytest_cache/
+ml_service/.coverage/
+ml_service/htmlcov/
+ml_service/models/
+ml_service/*.h5
+ml_service/*.pb
+ml_service/*.ckpt
+ml_service/*.tflite
+
+### Database & Logs ###
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+data/*.db
+data/*.lock
+h2.mv.db
+h2.trace.db
+
+### OS Files ###
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+### Maven ###
+.mvn/wrapper/maven-wrapper.properties
+maven-wrapper.jar
+.mvn/
+
+### Gradle ###
+gradle-wrapper.properties
+
+### IDE Generated Files ###
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+### IDE Temporary Files ###
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+.classpath
+.c9/
+*.launch
+.scala_dependencies
+.vscode-style.json
+
+### Compiled Python ###
+*.so
+
+### Distribution / packaging ###
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+### Jupyter Notebook ###
+.ipynb_checkpoints
+
+### Unit test / coverage reports ###
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+### Sensitive Files ###
+secrets.yml
+*.pem
+*.key
+*.p12
+*.pfx
+.credentials
+.aws/
+.ssh/

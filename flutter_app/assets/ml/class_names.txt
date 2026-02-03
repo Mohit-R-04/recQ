@@ -1,0 +1,7 @@
+Backpack
+Book
+Bottle
+Headphones
+Laptop
+Mobile phone
+Watch
