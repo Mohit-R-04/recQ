@@ -16,7 +16,8 @@ class TFLiteClassifier {
   bool _isInitialized = false;
 
   // Model configuration
-  static const String _modelPath = 'assets/ml/lost_and_found_classifier.tflite';
+  static const String _modelPath =
+      'assets/ml/lost_and_found_classifier1.tflite';
   static const String _labelsPath = 'assets/ml/class_names.txt';
   static const int _inputSize = 224;
   static const double _confThreshold = 0.65;
@@ -24,14 +25,14 @@ class TFLiteClassifier {
 
   // Category mapping from ML classes to backend enum
   static const Map<String, String> _mlToBackendCategory = {
-    'Backpack': 'ACCESSORIES',
-    'Book': 'DOCUMENT',
-    'Bottle': 'OTHERS',
-    'Headphones': 'ELECTRONIC',
-    'Laptop': 'ELECTRONIC',
-    'Mobile phone': 'ELECTRONIC',
-    'Watch': 'ACCESSORIES',
-    'Other': 'OTHERS',
+    'backpack': 'ACCESSORIES',
+    'bottle': 'OTHERS',
+    'headphone': 'ELECTRONIC',
+    'laptop': 'ELECTRONIC',
+    'mobile phone': 'ELECTRONIC',
+    'wallet': 'ACCESSORIES',
+    'watch': 'ACCESSORIES',
+    'other': 'OTHERS',
   };
 
   bool get isInitialized => _isInitialized;
@@ -133,8 +134,8 @@ class TFLiteClassifier {
     }
   }
 
-  /// Preprocess image for MobileNetV2
-  /// Normalizes pixel values to [-1, 1]
+  /// Preprocess image for EfficientNetB0
+  /// EfficientNet expects pixel values in [0, 255] range (no normalization)
   List<List<List<List<double>>>> _preprocessImage(img.Image image) {
     final input = List.generate(
       1,
@@ -144,11 +145,11 @@ class TFLiteClassifier {
           _inputSize,
           (x) {
             final pixel = image.getPixel(x, y);
-            // MobileNetV2 preprocessing: (pixel / 127.5) - 1.0
+            // EfficientNet preprocessing: pixel values as-is (0-255)
             return [
-              (pixel.r / 127.5) - 1.0,
-              (pixel.g / 127.5) - 1.0,
-              (pixel.b / 127.5) - 1.0,
+              pixel.r.toDouble(),
+              pixel.g.toDouble(),
+              pixel.b.toDouble(),
             ];
           },
         ),

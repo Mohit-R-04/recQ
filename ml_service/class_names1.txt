@@ -1,0 +1,8 @@
+backpack
+bottle
+headphone
+laptop
+mobile phone
+wallet
+watch
+

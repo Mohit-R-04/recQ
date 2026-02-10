@@ -8,6 +8,7 @@ import hyk.springframework.lostandfoundsystem.services.UserService;
 import hyk.springframework.lostandfoundsystem.util.LoginUserUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -464,7 +465,350 @@ public class RestApiController {
         }
     }
 
+    // ============ Matching APIs ============
+
+    @Autowired
+    private hyk.springframework.lostandfoundsystem.services.MatchingService matchingService;
+
+    @Autowired
+    private hyk.springframework.lostandfoundsystem.services.NotificationService notificationService;
+
+    @PostMapping("/items/{itemId}/find-matches")
+    public ResponseEntity<?> findMatchesForItem(@PathVariable UUID itemId) {
+        try {
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+            List<hyk.springframework.lostandfoundsystem.domain.ItemMatch> matches = matchingService
+                    .processNewItem(item);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("matchCount", matches.size());
+            response.put("matches",
+                    matches.stream().map(this::matchToDto).collect(java.util.stream.Collectors.toList()));
+            response.put("message",
+                    matches.size() > 0 ? "Found " + matches.size() + " potential matches!" : "No matches found yet");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to find matches", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to find matches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches")
+    public ResponseEntity<?> getMatchesForCurrentUser() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.ItemMatch> matches = matchingService
+                    .getPendingMatchesForUser(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("matchCount", matches.size());
+            response.put("matches",
+                    matches.stream().map(this::matchToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get matches", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to get matches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches/all")
+    public ResponseEntity<?> getAllMatchesForCurrentUser() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.ItemMatch> matches = matchingService
+                    .getAllMatchesForUser(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("matchCount", matches.size());
+            response.put("matches",
+                    matches.stream().map(this::matchToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get all matches", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to get matches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches/{matchId}")
+    public ResponseEntity<?> getMatchById(@PathVariable UUID matchId) {
+        try {
+            hyk.springframework.lostandfoundsystem.domain.ItemMatch match = matchingService.getMatchById(matchId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("match", matchToDto(match));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get match", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Match not found");
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/matches/{matchId}/confirm")
+    public ResponseEntity<?> confirmMatch(@PathVariable UUID matchId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            hyk.springframework.lostandfoundsystem.domain.ItemMatch match = matchingService.confirmMatch(matchId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("match", matchToDto(match));
+            response.put("message", "Match confirmed! You can now contact the other party.");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to confirm match", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to confirm match: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @PostMapping("/matches/{matchId}/dismiss")
+    public ResponseEntity<?> dismissMatch(@PathVariable UUID matchId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            hyk.springframework.lostandfoundsystem.domain.ItemMatch match = matchingService.dismissMatch(matchId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Match dismissed");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to dismiss match", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to dismiss match: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches/count")
+    public ResponseEntity<?> getMatchCount() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            Long count = matchingService.countPendingMatches(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("count", count);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", true, "count", 0));
+        }
+    }
+
+    // ============ Notification APIs ============
+
+    @GetMapping("/notifications")
+    public ResponseEntity<?> getNotifications() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.Notification> notifications = notificationService
+                    .getNotificationsForUser(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("notifications", notifications.stream()
+                    .map(this::notificationToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get notifications", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to get notifications: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/notifications/unread")
+    public ResponseEntity<?> getUnreadNotifications() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.Notification> notifications = notificationService
+                    .getUnreadNotifications(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("count", notifications.size());
+            response.put("notifications", notifications.stream()
+                    .map(this::notificationToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get unread notifications", e);
+            return ResponseEntity.ok(Map.of("success", true, "count", 0, "notifications", List.of()));
+        }
+    }
+
+    @GetMapping("/notifications/count")
+    public ResponseEntity<?> getNotificationCount() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            Long count = notificationService.countUnreadNotifications(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("count", count);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", true, "count", 0));
+        }
+    }
+
+    @PostMapping("/notifications/{notificationId}/read")
+    public ResponseEntity<?> markNotificationAsRead(@PathVariable UUID notificationId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            hyk.springframework.lostandfoundsystem.domain.Notification notification = notificationService
+                    .markAsRead(notificationId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("notification", notificationToDto(notification));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to mark notification as read", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to mark notification as read");
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @PostMapping("/notifications/read-all")
+    public ResponseEntity<?> markAllNotificationsAsRead() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            notificationService.markAllAsRead(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "All notifications marked as read");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to mark all notifications as read", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to mark notifications as read");
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @DeleteMapping("/notifications/{notificationId}")
+    public ResponseEntity<?> deleteNotification(@PathVariable UUID notificationId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            notificationService.deleteNotification(notificationId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Notification deleted");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to delete notification", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to delete notification");
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
     // ============ Helper Methods ============
+
+    private Map<String, Object> matchToDto(hyk.springframework.lostandfoundsystem.domain.ItemMatch match) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", match.getId());
+        dto.put("confidenceScore", match.getConfidenceScore());
+        dto.put("imageSimilarity", match.getImageSimilarity());
+        dto.put("textSimilarity", match.getTextSimilarity());
+        dto.put("categoryMatch", match.getCategoryMatch());
+        dto.put("matchLevel", match.getMatchLevel());
+        dto.put("isConfirmed", match.getIsConfirmed());
+        dto.put("isDismissed", match.getIsDismissed());
+        dto.put("createdAt", match.getCreatedAt() != null ? match.getCreatedAt().toString() : null);
+        dto.put("confirmedAt", match.getConfirmedAt() != null ? match.getConfirmedAt().toString() : null);
+
+        if (match.getLostItem() != null) {
+            Map<String, Object> lostItemDto = new HashMap<>();
+            lostItemDto.put("id", match.getLostItem().getId());
+            lostItemDto.put("title", match.getLostItem().getTitle());
+            lostItemDto.put("description", match.getLostItem().getDescription());
+            lostItemDto.put("category", match.getLostItem().getCategory());
+            lostItemDto.put("imageUrl", match.getLostItem().getImageUrl());
+            lostItemDto.put("lostFoundDate", match.getLostItem().getLostFoundDate());
+            lostItemDto.put("lostFoundLocation", match.getLostItem().getLostFoundLocation());
+            lostItemDto.put("reporterName", match.getLostItem().getReporterName());
+            lostItemDto.put("reporterEmail", match.getLostItem().getReporterEmail());
+            lostItemDto.put("reporterPhoneNo", match.getLostItem().getReporterPhoneNo());
+            dto.put("lostItem", lostItemDto);
+        }
+
+        if (match.getFoundItem() != null) {
+            Map<String, Object> foundItemDto = new HashMap<>();
+            foundItemDto.put("id", match.getFoundItem().getId());
+            foundItemDto.put("title", match.getFoundItem().getTitle());
+            foundItemDto.put("description", match.getFoundItem().getDescription());
+            foundItemDto.put("category", match.getFoundItem().getCategory());
+            foundItemDto.put("imageUrl", match.getFoundItem().getImageUrl());
+            foundItemDto.put("lostFoundDate", match.getFoundItem().getLostFoundDate());
+            foundItemDto.put("lostFoundLocation", match.getFoundItem().getLostFoundLocation());
+            foundItemDto.put("reporterName", match.getFoundItem().getReporterName());
+            foundItemDto.put("reporterEmail", match.getFoundItem().getReporterEmail());
+            foundItemDto.put("reporterPhoneNo", match.getFoundItem().getReporterPhoneNo());
+            dto.put("foundItem", foundItemDto);
+        }
+
+        return dto;
+    }
+
+    private Map<String, Object> notificationToDto(
+            hyk.springframework.lostandfoundsystem.domain.Notification notification) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", notification.getId());
+        dto.put("title", notification.getTitle());
+        dto.put("message", notification.getMessage());
+        dto.put("notificationType", notification.getNotificationType());
+        dto.put("isRead", notification.getIsRead());
+        dto.put("createdAt", notification.getCreatedAt() != null ? notification.getCreatedAt().toString() : null);
+        dto.put("readAt", notification.getReadAt() != null ? notification.getReadAt().toString() : null);
+
+        if (notification.getRelatedMatch() != null) {
+            dto.put("matchId", notification.getRelatedMatch().getId());
+        }
+        if (notification.getRelatedItem() != null) {
+            dto.put("itemId", notification.getRelatedItem().getId());
+        }
+
+        return dto;
+    }
 
     private void checkPermission(LostFoundItem lostFoundItem) {
         if (!LoginUserUtil.isAdmin() &&

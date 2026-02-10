@@ -4,6 +4,9 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/app_provider.dart';
 import '../models/lost_found_item.dart';
 import '../config/api_config.dart';
+import '../services/api_service.dart';
+import 'notifications_screen.dart';
+import 'matches_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,125 +17,223 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   String _filter = 'all'; // all, lost, found, my
+  final ApiService _apiService = ApiService();
+  int _notificationCount = 0;
+  int _matchCount = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<AppProvider>(context, listen: false).fetchItems();
+      _loadCounts();
     });
+  }
+
+  Future<void> _loadCounts() async {
+    final notifications = await _apiService.getUnreadNotificationCount();
+    final matches = await _apiService.getPendingMatchCount();
+    if (mounted) {
+      setState(() {
+        _notificationCount = notifications;
+        _matchCount = matches;
+      });
+    }
   }
 
   List<LostFoundItem> _getFilteredItems(List<LostFoundItem> items) {
     final provider = Provider.of<AppProvider>(context, listen: false);
-    
+
     switch (_filter) {
       case 'lost':
         return items.where((item) => item.type == 'LOST').toList();
       case 'found':
         return items.where((item) => item.type == 'FOUND').toList();
       case 'my':
-        return items.where((item) => item.createdBy == provider.currentUser?.username).toList();
+        return items
+            .where((item) => item.createdBy == provider.currentUser?.username)
+            .toList();
       default:
         return items;
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false, // Prevent back button - user must logout to return to login
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Lost & Found'),
-          automaticallyImplyLeading: false, // Remove back button from app bar
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.person),
-              onPressed: () {
-                Navigator.of(context).pushNamed('/profile');
-              },
-            ),
-          ],
-        ),
-      body: Column(
-        children: [
-          // Filter chips
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+        canPop:
+            false, // Prevent back button - user must logout to return to login
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Lost & Found'),
+            automaticallyImplyLeading: false, // Remove back button from app bar
+            actions: [
+              // Matches button with badge
+              Stack(
                 children: [
-                  _buildFilterChip('All Items', 'all'),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('Lost', 'lost'),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('Found', 'found'),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('My Items', 'my'),
-                ],
-              ),
-            ),
-          ),
-          const Divider(height: 1),
-          // Items list
-          Expanded(
-            child: Consumer<AppProvider>(
-              builder: (context, provider, child) {
-                if (provider.isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final filteredItems = _getFilteredItems(provider.items);
-
-                if (filteredItems.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.inbox,
-                          size: 80,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No items found',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () => provider.fetchItems(),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filteredItems.length,
-                    itemBuilder: (context, index) {
-                      return _buildItemCard(filteredItems[index]);
+                  IconButton(
+                    icon: const Icon(Icons.compare_arrows),
+                    tooltip: 'Matches',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const MatchesScreen()),
+                      ).then((_) => _loadCounts());
                     },
                   ),
-                );
-              },
-            ),
+                  if (_matchCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '$_matchCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              // Notifications button with badge
+              Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications),
+                    tooltip: 'Notifications',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const NotificationsScreen()),
+                      ).then((_) => _loadCounts());
+                    },
+                  ),
+                  if (_notificationCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '$_notificationCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.person),
+                onPressed: () {
+                  Navigator.of(context).pushNamed('/profile');
+                },
+              ),
+            ],
           ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.of(context).pushNamed('/create-item');
-        },
-        icon: const Icon(Icons.add),
-        label: const Text('Report Item'),
-      ),
-    )); // PopScope
+          body: Column(
+            children: [
+              // Filter chips
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('All Items', 'all'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Lost', 'lost'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Found', 'found'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('My Items', 'my'),
+                    ],
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              // Items list
+              Expanded(
+                child: Consumer<AppProvider>(
+                  builder: (context, provider, child) {
+                    if (provider.isLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final filteredItems = _getFilteredItems(provider.items);
+
+                    if (filteredItems.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.inbox,
+                              size: 80,
+                              color: Colors.grey[400],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'No items found',
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return RefreshIndicator(
+                      onRefresh: () => provider.fetchItems(),
+                      child: ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: filteredItems.length,
+                        itemBuilder: (context, index) {
+                          return _buildItemCard(filteredItems[index]);
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () {
+              Navigator.of(context).pushNamed('/create-item');
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Report Item'),
+          ),
+        )); // PopScope
   } // build
 
   Widget _buildFilterChip(String label, String value) {
@@ -167,7 +268,8 @@ class _HomeScreenState extends State<HomeScreen> {
             // Image
             if (item.imageUrl != null)
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(12)),
                 child: CachedNetworkImage(
                   imageUrl: ApiConfig.imageUrl(item.imageUrl!),
                   height: 200,
@@ -254,7 +356,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Icon(Icons.location_on, size: 16, color: Colors.grey[600]),
+                      Icon(Icons.location_on,
+                          size: 16, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -268,7 +371,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                      Icon(Icons.calendar_today,
+                          size: 16, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Text(
                         item.lostFoundDate,

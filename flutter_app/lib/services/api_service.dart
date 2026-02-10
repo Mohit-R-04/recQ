@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../models/user.dart';
 import '../models/lost_found_item.dart';
+import '../models/item_match.dart';
+import '../models/notification.dart';
 import 'tflite_classifier.dart';
 
 class ApiService {
@@ -269,6 +271,14 @@ class ApiService {
         body: jsonEncode(item.toJson()),
       );
 
+      // Check for empty response body
+      if (response.body.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Server returned empty response. Is the backend running?'
+        };
+      }
+
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200 && data['success'] == true) {
@@ -420,5 +430,313 @@ class ApiService {
   /// Initialize TFLite model (call during app startup)
   Future<bool> initializeTFLite() async {
     return await _tfliteClassifier.initialize();
+  }
+
+  // ============ Matching APIs ============
+
+  /// Find matches for a specific item
+  Future<Map<String, dynamic>> findMatchesForItem(String itemId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/items/$itemId/find-matches'),
+        headers: await _headers,
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        List<ItemMatch> matches = [];
+        if (data['matches'] != null) {
+          matches = (data['matches'] as List)
+              .map((m) => ItemMatch.fromJson(m))
+              .toList();
+        }
+        return {
+          'success': true,
+          'matchCount': data['matchCount'] ?? 0,
+          'matches': matches,
+          'message': data['message'] ?? 'Matches found',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to find matches'
+        };
+      }
+    } catch (e) {
+      print('Error finding matches: $e');
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Get pending matches for current user
+  Future<List<ItemMatch>> getPendingMatches() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/matches'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['matches'] != null) {
+          return (data['matches'] as List)
+              .map((m) => ItemMatch.fromJson(m))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching pending matches: $e');
+      return [];
+    }
+  }
+
+  /// Get all matches for current user
+  Future<List<ItemMatch>> getAllMatches() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/matches/all'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['matches'] != null) {
+          return (data['matches'] as List)
+              .map((m) => ItemMatch.fromJson(m))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching all matches: $e');
+      return [];
+    }
+  }
+
+  /// Get match by ID
+  Future<ItemMatch?> getMatchById(String matchId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/matches/$matchId'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['match'] != null) {
+          return ItemMatch.fromJson(data['match']);
+        }
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching match: $e');
+      return null;
+    }
+  }
+
+  /// Confirm a match
+  Future<Map<String, dynamic>> confirmMatch(String matchId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/matches/$matchId/confirm'),
+        headers: await _headers,
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {
+          'success': true,
+          'match':
+              data['match'] != null ? ItemMatch.fromJson(data['match']) : null,
+          'message': data['message'] ?? 'Match confirmed!',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to confirm match'
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Dismiss a match
+  Future<Map<String, dynamic>> dismissMatch(String matchId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/matches/$matchId/dismiss'),
+        headers: await _headers,
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {
+          'success': true,
+          'message': data['message'] ?? 'Match dismissed'
+        };
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to dismiss match'
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Get pending match count
+  Future<int> getPendingMatchCount() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/matches/count'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['count'] ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      print('Error fetching match count: $e');
+      return 0;
+    }
+  }
+
+  // ============ Notification APIs ============
+
+  /// Get all notifications for current user
+  Future<List<AppNotification>> getNotifications() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/notifications'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['notifications'] != null) {
+          return (data['notifications'] as List)
+              .map((n) => AppNotification.fromJson(n))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching notifications: $e');
+      return [];
+    }
+  }
+
+  /// Get unread notifications
+  Future<Map<String, dynamic>> getUnreadNotifications() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/notifications/unread'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        List<AppNotification> notifications = [];
+        if (data['notifications'] != null) {
+          notifications = (data['notifications'] as List)
+              .map((n) => AppNotification.fromJson(n))
+              .toList();
+        }
+        return {
+          'success': true,
+          'count': data['count'] ?? 0,
+          'notifications': notifications,
+        };
+      }
+      return {'success': false, 'count': 0, 'notifications': []};
+    } catch (e) {
+      print('Error fetching unread notifications: $e');
+      return {'success': false, 'count': 0, 'notifications': []};
+    }
+  }
+
+  /// Get unread notification count
+  Future<int> getUnreadNotificationCount() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/api/notifications/count'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['count'] ?? 0;
+      }
+      return 0;
+    } catch (e) {
+      print('Error fetching notification count: $e');
+      return 0;
+    }
+  }
+
+  /// Mark notification as read
+  Future<bool> markNotificationAsRead(String notificationId) async {
+    try {
+      final response = await http.post(
+        Uri.parse(
+            '${ApiConfig.baseUrl}/api/notifications/$notificationId/read'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      print('Error marking notification as read: $e');
+      return false;
+    }
+  }
+
+  /// Mark all notifications as read
+  Future<bool> markAllNotificationsAsRead() async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/notifications/read-all'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      print('Error marking all notifications as read: $e');
+      return false;
+    }
+  }
+
+  /// Delete notification
+  Future<bool> deleteNotification(String notificationId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}/api/notifications/$notificationId'),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      print('Error deleting notification: $e');
+      return false;
+    }
   }
 }

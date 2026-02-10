@@ -7,8 +7,8 @@ import numpy as np
 # ======================================================
 # CONFIG
 # ======================================================
-KERAS_MODEL_PATH = "models/lost_and_found_classifier8.keras"
-TFLITE_MODEL_PATH = "lost_and_found_classifier.tflite"
+KERAS_MODEL_PATH = "models/lost_and_found_classifier11.keras"
+TFLITE_MODEL_PATH = "lost_and_found_classifier1.tflite"
 IMG_SIZE = (224, 224)
 
 # ======================================================

@@ -132,7 +132,7 @@ class AppProvider with ChangeNotifier {
     return await _apiService.getItemById(itemId);
   }
 
-  Future<bool> createItem(LostFoundItem item) async {
+  Future<Map<String, dynamic>> createItem(LostFoundItem item) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
@@ -143,12 +143,19 @@ class AppProvider with ChangeNotifier {
       await fetchItems();
       _isLoading = false;
       notifyListeners();
-      return true;
+      final createdItem = result['item'] as LostFoundItem?;
+      return {
+        'success': true,
+        'itemId': createdItem?.id,
+      };
     } else {
       _error = result['message'];
       _isLoading = false;
       notifyListeners();
-      return false;
+      return {
+        'success': false,
+        'message': result['message'],
+      };
     }
   }
 
