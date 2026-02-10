@@ -7,6 +7,9 @@ import '../config/api_config.dart';
 import '../services/api_service.dart';
 import 'notifications_screen.dart';
 import 'matches_screen.dart';
+import 'my_claims_screen.dart';
+import 'admin_claims_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -66,7 +69,13 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Scaffold(
           appBar: AppBar(
             title: const Text('Lost & Found'),
-            automaticallyImplyLeading: false, // Remove back button from app bar
+            leading: Builder(
+              builder: (context) => IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: () => Scaffold.of(context).openDrawer(),
+                tooltip: 'Menu',
+              ),
+            ),
             actions: [
               // Matches button with badge
               Stack(
@@ -148,14 +157,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                 ],
               ),
-              IconButton(
-                icon: const Icon(Icons.person),
-                onPressed: () {
-                  Navigator.of(context).pushNamed('/profile');
-                },
-              ),
             ],
           ),
+          drawer: _buildDrawer(),
           body: Column(
             children: [
               // Filter chips
@@ -390,5 +394,96 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     ); // Card
-  } // build
+  } // _buildItemCard
+
+  Widget _buildDrawer() {
+    final provider = Provider.of<AppProvider>(context);
+    final user = provider.currentUser;
+
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          UserAccountsDrawerHeader(
+            accountName: Text(user?.fullName ?? 'User'),
+            accountEmail: Text(user?.email ?? ''),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.white,
+              child: Text(
+                (user?.fullName ?? 'U').substring(0, 1).toUpperCase(),
+                style:
+                    const TextStyle(fontSize: 24.0, color: Color(0xFF6C47FF)),
+              ),
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFF6C47FF),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.home),
+            title: const Text('Home'),
+            onTap: () {
+              Navigator.pop(context); // Close drawer
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.person),
+            title: const Text('My Profile'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).pushNamed('/profile');
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.assignment_turned_in),
+            title: const Text('My Claims'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MyClaimsScreen()),
+              );
+            },
+          ),
+          if (user?.isAdmin == true) ...[
+            const Divider(),
+            const Padding(
+              padding: EdgeInsets.only(left: 16, top: 8, bottom: 8),
+              child: Text(
+                'Admin',
+                style:
+                    TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings),
+              title: const Text('Claims Dashboard'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const AdminClaimsScreen()),
+                );
+              },
+            ),
+          ],
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text('Logout', style: TextStyle(color: Colors.red)),
+            onTap: () async {
+              Navigator.pop(context);
+              // Clear prefs
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+              if (mounted) {
+                Navigator.of(context).pushReplacementNamed('/login');
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
 } // _HomeScreenState

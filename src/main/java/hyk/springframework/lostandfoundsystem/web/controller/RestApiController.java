@@ -1,15 +1,22 @@
 package hyk.springframework.lostandfoundsystem.web.controller;
 
+import hyk.springframework.lostandfoundsystem.domain.Claim;
 import hyk.springframework.lostandfoundsystem.domain.LostFoundItem;
 import hyk.springframework.lostandfoundsystem.domain.security.Role;
 import hyk.springframework.lostandfoundsystem.domain.security.User;
+import hyk.springframework.lostandfoundsystem.enums.ClaimStatus;
+import hyk.springframework.lostandfoundsystem.services.ClaimService;
 import hyk.springframework.lostandfoundsystem.services.LostFoundItemService;
 import hyk.springframework.lostandfoundsystem.services.UserService;
 import hyk.springframework.lostandfoundsystem.util.LoginUserUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -19,6 +26,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.client.RestTemplate;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+import javax.servlet.http.Cookie;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -41,6 +53,10 @@ public class RestApiController {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final hyk.springframework.lostandfoundsystem.services.OtpService otpService;
+    private final RestTemplate restTemplate;
+
+    @Value("${ml.service.url:http://localhost:5000}")
+    private String mlServiceUrl;
 
     // ============ Authentication APIs ============
 
@@ -178,7 +194,8 @@ public class RestApiController {
     }
 
     @PostMapping("/auth/verify-otp")
-    public ResponseEntity<?> verifyOtpAndLogin(@RequestBody Map<String, String> request) {
+    public ResponseEntity<?> verifyOtpAndLogin(@RequestBody Map<String, String> request,
+            HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         try {
             String email = request.get("email");
             String otp = request.get("otp");
@@ -206,6 +223,11 @@ public class RestApiController {
             Authentication authentication = new UsernamePasswordAuthenticationToken(
                     user.getUsername(), null, user.getAuthorities());
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            HttpSession session = httpRequest.getSession(true);
+            Cookie sessionCookie = new Cookie("JSESSIONID", session.getId());
+            sessionCookie.setPath("/");
+            sessionCookie.setHttpOnly(true);
+            httpResponse.addCookie(sessionCookie);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -282,20 +304,31 @@ public class RestApiController {
     // ============ Lost/Found Item APIs ============
 
     @GetMapping("/items")
-    public ResponseEntity<List<LostFoundItem>> getAllItems() {
-        return ResponseEntity.ok(lostFoundItemService.findAllItems());
+    public ResponseEntity<?> getAllItems() {
+        boolean isAdmin = LoginUserUtil.isAdmin();
+        List<LostFoundItem> items = lostFoundItemService.findAllItems();
+        List<Map<String, Object>> itemDtos = items.stream()
+                .map(item -> itemToDto(item, isAdmin))
+                .collect(java.util.stream.Collectors.toList());
+        return ResponseEntity.ok(itemDtos);
     }
 
     @GetMapping("/items/user/{userId}")
-    public ResponseEntity<List<LostFoundItem>> getItemsByUserId(@PathVariable Integer userId) {
-        return ResponseEntity.ok(lostFoundItemService.findAllItemsByUserId(userId));
+    public ResponseEntity<?> getItemsByUserId(@PathVariable Integer userId) {
+        boolean isAdmin = LoginUserUtil.isAdmin();
+        List<LostFoundItem> items = lostFoundItemService.findAllItemsByUserId(userId);
+        List<Map<String, Object>> itemDtos = items.stream()
+                .map(item -> itemToDto(item, isAdmin))
+                .collect(java.util.stream.Collectors.toList());
+        return ResponseEntity.ok(itemDtos);
     }
 
     @GetMapping("/items/{itemId}")
     public ResponseEntity<?> getItemById(@PathVariable UUID itemId) {
         try {
             LostFoundItem item = lostFoundItemService.findItemById(itemId);
-            return ResponseEntity.ok(item);
+            boolean isAdmin = LoginUserUtil.isAdmin();
+            return ResponseEntity.ok(itemToDto(item, isAdmin));
         } catch (Exception e) {
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
@@ -741,7 +774,271 @@ public class RestApiController {
         }
     }
 
+    // ============ Claim APIs ============
+
+    @Autowired
+    private ClaimService claimService;
+
+    @GetMapping("/claims/questions/{itemId}")
+    public ResponseEntity<?> generateClaimQuestions(@PathVariable UUID itemId,
+            @RequestParam(defaultValue = "5") int numQuestions) {
+        try {
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("title", item.getTitle());
+            body.put("category", item.getCategory() != null ? item.getCategory().name() : "OTHERS");
+            body.put("description", item.getDescription() != null ? item.getDescription() : "");
+            body.put("numQuestions", numQuestions);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    mlServiceUrl + "/generate-questions", request, Map.class);
+
+            if (response.getStatusCode() == HttpStatus.OK
+                    && response.getBody() != null
+                    && Boolean.TRUE.equals(response.getBody().get("success"))) {
+                return ResponseEntity.ok(response.getBody());
+            }
+
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("success", false, "message", "Failed to generate questions"));
+        } catch (Exception e) {
+            log.error("Failed to generate claim questions", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to generate questions"));
+        }
+    }
+
+    @PostMapping("/claims")
+    public ResponseEntity<?> submitClaim(@RequestBody Map<String, Object> claimData) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            User claimant = userService.findByUsername(user.getUsername());
+            if (claimant == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("success", false, "message", "User not found"));
+            }
+
+            String itemId = (String) claimData.get("itemId");
+            String questionsAndAnswers = (String) claimData.get("questionsAndAnswers");
+
+            LostFoundItem item = lostFoundItemService.findItemById(UUID.fromString(itemId));
+
+            Claim claim = claimService.createClaim(item, claimant, questionsAndAnswers);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claim", claimToDto(claim));
+            response.put("message", "Claim submitted successfully. Admin will review your answers.");
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.error("Failed to submit claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Failed to submit claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to submit claim: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/claims/my")
+    public ResponseEntity<?> getMyClaims() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            User claimant = userService.findByUsername(user.getUsername());
+            List<Claim> claims = claimService.getClaimsByClaimant(claimant);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claims", claims.stream().map(this::claimToDto)
+                    .collect(java.util.stream.Collectors.toList()));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get claims", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to get claims"));
+        }
+    }
+
+    @GetMapping("/claims/item/{itemId}")
+    public ResponseEntity<?> getClaimsForItem(@PathVariable UUID itemId) {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            List<Claim> claims = claimService.getClaimsByItem(itemId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claims", claims.stream().map(this::claimToDto)
+                    .collect(java.util.stream.Collectors.toList()));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get claims for item", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to get claims"));
+        }
+    }
+
+    @GetMapping("/claims/admin/all")
+    public ResponseEntity<?> getAllClaimsAdmin() {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            List<Claim> claims = claimService.getAllClaims();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claims", claims.stream().map(this::claimToDto)
+                    .collect(java.util.stream.Collectors.toList()));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get all claims", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to get claims"));
+        }
+    }
+
+    @GetMapping("/claims/{claimId}")
+    public ResponseEntity<?> getClaimById(@PathVariable UUID claimId) {
+        try {
+            Claim claim = claimService.getClaimById(claimId);
+
+            if (!LoginUserUtil.isAdmin()) {
+                User currentUser = LoginUserUtil.getLoginUser();
+                if (claim.getClaimant() == null
+                        || currentUser == null
+                        || !claim.getClaimant().getId().equals(currentUser.getId())) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "message", "Access denied"));
+                }
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claim", claimToDto(claim));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Claim not found"));
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/review")
+    public ResponseEntity<?> reviewClaim(@PathVariable UUID claimId,
+            @RequestBody Map<String, String> reviewData) {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            String statusStr = reviewData.get("status");
+            String adminNotes = reviewData.get("adminNotes");
+            ClaimStatus status = ClaimStatus.valueOf(statusStr);
+            String reviewedBy = LoginUserUtil.getLoginUser().getUsername();
+
+            Claim claim = claimService.updateClaimStatus(claimId, status, adminNotes, reviewedBy);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claim", claimToDto(claim));
+            response.put("message", "Claim status updated to " + status);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to review claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to review claim: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/claims/check/{itemId}")
+    public ResponseEntity<?> checkIfUserClaimedItem(@PathVariable UUID itemId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            User claimant = userService.findByUsername(user.getUsername());
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+            boolean hasClaimed = claimService.hasUserClaimedItem(item, claimant);
+
+            return ResponseEntity.ok(Map.of("success", true, "hasClaimed", hasClaimed));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", true, "hasClaimed", false));
+        }
+    }
+
     // ============ Helper Methods ============
+
+    /**
+     * Convert item to DTO, hiding description and reporter info from non-admin
+     * users.
+     */
+    private Map<String, Object> itemToDto(LostFoundItem item, boolean isAdmin) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", item.getId());
+        dto.put("type", item.getType());
+        dto.put("title", item.getTitle());
+        dto.put("lostFoundDate", item.getLostFoundDate());
+        dto.put("lostFoundLocation", item.getLostFoundLocation());
+        dto.put("category", item.getCategory());
+        dto.put("imageUrl", item.getImageUrl());
+        dto.put("latitude", item.getLatitude());
+        dto.put("longitude", item.getLongitude());
+        dto.put("collectionLocation", item.getCollectionLocation());
+
+        boolean isOwner = false;
+        if (!isAdmin) {
+            try {
+                User currentUser = LoginUserUtil.getLoginUser();
+                isOwner = currentUser != null
+                        && item.getUser() != null
+                        && item.getUser().getId().equals(currentUser.getId());
+            } catch (Exception e) {
+                isOwner = false;
+            }
+        }
+
+        if (isAdmin || isOwner) {
+            dto.put("createdBy", item.getCreatedBy());
+            dto.put("modifiedBy", item.getModifiedBy());
+        }
+
+        // Comments visible to all
+        if (item.getComments() != null) {
+            dto.put("comments", item.getComments().stream().map(c -> {
+                Map<String, Object> commentDto = new HashMap<>();
+                commentDto.put("id", c.getId());
+                commentDto.put("commentText", c.getText());
+                commentDto.put("createdBy", c.getAuthorName());
+                return commentDto;
+            }).collect(java.util.stream.Collectors.toList()));
+        }
+
+        // Description and reporter info: ONLY visible to admin
+        if (isAdmin) {
+            dto.put("description", item.getDescription());
+            dto.put("reporterName", item.getReporterName());
+            dto.put("reporterEmail", item.getReporterEmail());
+            dto.put("reporterPhoneNo", item.getReporterPhoneNo());
+        } else {
+            dto.put("description", ""); // hidden from regular users
+            dto.put("reporterName", "");
+            dto.put("reporterEmail", "");
+            dto.put("reporterPhoneNo", "");
+        }
+
+        return dto;
+    }
 
     private Map<String, Object> matchToDto(hyk.springframework.lostandfoundsystem.domain.ItemMatch match) {
         Map<String, Object> dto = new HashMap<>();
@@ -756,34 +1053,14 @@ public class RestApiController {
         dto.put("createdAt", match.getCreatedAt() != null ? match.getCreatedAt().toString() : null);
         dto.put("confirmedAt", match.getConfirmedAt() != null ? match.getConfirmedAt().toString() : null);
 
+        boolean isAdmin = LoginUserUtil.isAdmin();
+
         if (match.getLostItem() != null) {
-            Map<String, Object> lostItemDto = new HashMap<>();
-            lostItemDto.put("id", match.getLostItem().getId());
-            lostItemDto.put("title", match.getLostItem().getTitle());
-            lostItemDto.put("description", match.getLostItem().getDescription());
-            lostItemDto.put("category", match.getLostItem().getCategory());
-            lostItemDto.put("imageUrl", match.getLostItem().getImageUrl());
-            lostItemDto.put("lostFoundDate", match.getLostItem().getLostFoundDate());
-            lostItemDto.put("lostFoundLocation", match.getLostItem().getLostFoundLocation());
-            lostItemDto.put("reporterName", match.getLostItem().getReporterName());
-            lostItemDto.put("reporterEmail", match.getLostItem().getReporterEmail());
-            lostItemDto.put("reporterPhoneNo", match.getLostItem().getReporterPhoneNo());
-            dto.put("lostItem", lostItemDto);
+            dto.put("lostItem", itemToDto(match.getLostItem(), isAdmin));
         }
 
         if (match.getFoundItem() != null) {
-            Map<String, Object> foundItemDto = new HashMap<>();
-            foundItemDto.put("id", match.getFoundItem().getId());
-            foundItemDto.put("title", match.getFoundItem().getTitle());
-            foundItemDto.put("description", match.getFoundItem().getDescription());
-            foundItemDto.put("category", match.getFoundItem().getCategory());
-            foundItemDto.put("imageUrl", match.getFoundItem().getImageUrl());
-            foundItemDto.put("lostFoundDate", match.getFoundItem().getLostFoundDate());
-            foundItemDto.put("lostFoundLocation", match.getFoundItem().getLostFoundLocation());
-            foundItemDto.put("reporterName", match.getFoundItem().getReporterName());
-            foundItemDto.put("reporterEmail", match.getFoundItem().getReporterEmail());
-            foundItemDto.put("reporterPhoneNo", match.getFoundItem().getReporterPhoneNo());
-            dto.put("foundItem", foundItemDto);
+            dto.put("foundItem", itemToDto(match.getFoundItem(), isAdmin));
         }
 
         return dto;
@@ -805,6 +1082,51 @@ public class RestApiController {
         }
         if (notification.getRelatedItem() != null) {
             dto.put("itemId", notification.getRelatedItem().getId());
+        }
+
+        return dto;
+    }
+
+    private Map<String, Object> claimToDto(Claim claim) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", claim.getId());
+        dto.put("status", claim.getStatus());
+        dto.put("questionsAndAnswers", claim.getQuestionsAndAnswers());
+        dto.put("adminNotes", claim.getAdminNotes());
+        dto.put("reviewedBy", claim.getReviewedBy());
+        dto.put("createdAt", claim.getCreatedAt() != null ? claim.getCreatedAt().toString() : null);
+        dto.put("updatedAt", claim.getUpdatedAt() != null ? claim.getUpdatedAt().toString() : null);
+        dto.put("reviewedAt", claim.getReviewedAt() != null ? claim.getReviewedAt().toString() : null);
+
+        if (claim.getItem() != null) {
+            Map<String, Object> itemDto = new HashMap<>();
+            itemDto.put("id", claim.getItem().getId());
+            itemDto.put("title", claim.getItem().getTitle());
+            itemDto.put("category", claim.getItem().getCategory());
+            itemDto.put("imageUrl", claim.getItem().getImageUrl());
+            itemDto.put("type", claim.getItem().getType());
+            itemDto.put("lostFoundLocation", claim.getItem().getLostFoundLocation());
+            // Admin can see description
+            if (LoginUserUtil.isAdmin()) {
+                itemDto.put("description", claim.getItem().getDescription());
+            }
+            dto.put("item", itemDto);
+        }
+
+        boolean includeClaimant = LoginUserUtil.isAdmin();
+        if (!includeClaimant) {
+            try {
+                User currentUser = LoginUserUtil.getLoginUser();
+                includeClaimant = claim.getClaimant() != null
+                        && currentUser != null
+                        && claim.getClaimant().getId().equals(currentUser.getId());
+            } catch (Exception e) {
+                includeClaimant = false;
+            }
+        }
+
+        if (includeClaimant && claim.getClaimant() != null) {
+            dto.put("claimant", getUserDto(claim.getClaimant()));
         }
 
         return dto;

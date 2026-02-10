@@ -491,7 +491,43 @@ def get_matching_stats():
         }), 500
 
 # ======================================================
+# QUESTION GENERATION ENDPOINTS
+# ======================================================
+
+from question_generator import generate_questions, extract_keywords
+
+@app.route('/generate-questions', methods=['POST'])
+def generate_verification_questions():
+    """Generate NLP-based verification questions for an item claim."""
+    try:
+        data = request.get_json()
+        title = data.get('title', '')
+        category = data.get('category', 'OTHERS')
+        description = data.get('description', '')
+        num_questions = data.get('numQuestions', 5)
+
+        questions = generate_questions(
+            title=title,
+            category=category,
+            description=description,
+            num_questions=num_questions
+        )
+
+        return jsonify({
+            'success': True,
+            'questions': questions,
+            'count': len(questions),
+            'keywords': extract_keywords(title + ' ' + description)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# ======================================================
 # MAIN
 # ======================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
+

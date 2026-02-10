@@ -14,11 +14,12 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  
+
   bool _isLoading = false;
   bool _isPasswordVisible = false;
   String? _errorMessage;
@@ -78,29 +79,32 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         // Save user data
         final prefs = await SharedPreferences.getInstance();
         final userData = response['user'];
-        
+
         // If userData is a User object, convert to JSON
         if (userData is Map<String, dynamic>) {
           await prefs.setString('user', jsonEncode(userData));
         } else {
           // It's already a User object from api_service
-          await prefs.setString('user', jsonEncode({
-            'id': userData.id,
-            'username': userData.username,
-            'fullName': userData.fullName,
-            'email': userData.email,
-            'phoneNumber': userData.phoneNumber,
-          }));
+          await prefs.setString(
+              'user',
+              jsonEncode({
+                'id': userData.id,
+                'username': userData.username,
+                'fullName': userData.fullName,
+                'email': userData.email,
+                'phoneNumber': userData.phoneNumber,
+                'roles': userData.roles,
+              }));
         }
-        
+
         // Update AppProvider with user data
         if (mounted) {
           final provider = Provider.of<AppProvider>(context, listen: false);
           await provider.loadUserFromPreferences();
         }
-        
+
         Navigator.of(context).pushReplacementNamed('/home');
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Welcome back, ${_usernameController.text}!'),
@@ -172,7 +176,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                           ),
                           const SizedBox(height: 24),
-                          
+
                           // Title
                           const Text(
                             'Lost & Found',
@@ -184,7 +188,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 8),
-                          
+
                           // Subtitle
                           Text(
                             'Sign in to continue',
@@ -195,7 +199,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             textAlign: TextAlign.center,
                           ),
                           const SizedBox(height: 32),
-                          
+
                           // Error Message
                           if (_errorMessage != null)
                             Container(
@@ -208,7 +212,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               ),
                               child: Row(
                                 children: [
-                                  Icon(Icons.error_outline, color: Colors.red[700], size: 20),
+                                  Icon(Icons.error_outline,
+                                      color: Colors.red[700], size: 20),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -222,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 ],
                               ),
                             ),
-                          
+
                           // Username Field
                           TextFormField(
                             controller: _usernameController,
@@ -240,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             onFieldSubmitted: (_) => _login(),
                           ),
                           const SizedBox(height: 16),
-                          
+
                           // Password Field
                           TextFormField(
                             controller: _passwordController,
@@ -271,7 +276,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             onFieldSubmitted: (_) => _login(),
                           ),
                           const SizedBox(height: 24),
-                          
+
                           // Login Button
                           ElevatedButton(
                             onPressed: _isLoading ? null : _login,
@@ -281,7 +286,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                     width: 20,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
                                     ),
                                   )
                                 : const Text(
@@ -293,7 +299,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ),
                           ),
                           const SizedBox(height: 16),
-                          
+
                           // Forgot Password Link
                           Align(
                             alignment: Alignment.centerRight,
@@ -301,7 +307,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
-                                    builder: (context) => const ForgotPasswordScreen(),
+                                    builder: (context) =>
+                                        const ForgotPasswordScreen(),
                                   ),
                                 );
                               },
@@ -313,7 +320,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               ),
                             ),
                           ),
-                          
+
                           // Demo Credentials
                           Container(
                             padding: const EdgeInsets.all(12),
@@ -327,7 +334,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               children: [
                                 Row(
                                   children: [
-                                    Icon(Icons.info_outline, color: Colors.blue[700], size: 16),
+                                    Icon(Icons.info_outline,
+                                        color: Colors.blue[700], size: 16),
                                     const SizedBox(width: 8),
                                     Text(
                                       'Demo Credentials',
@@ -360,13 +368,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                           ),
                           const SizedBox(height: 16),
-                          
+
                           // Divider
                           Row(
                             children: [
                               Expanded(child: Divider(color: Colors.grey[300])),
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
                                 child: Text(
                                   'New User?',
                                   style: TextStyle(
@@ -379,7 +388,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ],
                           ),
                           const SizedBox(height: 16),
-                          
+
                           // Sign Up Button
                           OutlinedButton.icon(
                             onPressed: () {
@@ -399,7 +408,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF6C47FF),
-                              side: const BorderSide(color: Color(0xFF6C47FF), width: 2),
+                              side: const BorderSide(
+                                  color: Color(0xFF6C47FF), width: 2),
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),

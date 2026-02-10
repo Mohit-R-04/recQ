@@ -444,25 +444,6 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                     item.lostFoundDate ?? 'Unknown'),
                 _buildDetailRow(Icons.location_on, 'Location',
                     item.lostFoundLocation ?? 'Unknown'),
-                const Divider(height: 24),
-                _buildDetailRow(
-                    Icons.person, 'Reporter', item.reporterName ?? 'Unknown'),
-
-                // Contact button
-                if (_match!.isConfirmed)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: ElevatedButton.icon(
-                      onPressed: () => _contactReporter(
-                          item.reporterEmail, item.reporterPhoneNo),
-                      icon: const Icon(Icons.contact_phone),
-                      label: const Text('Contact Reporter'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: labelColor,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),

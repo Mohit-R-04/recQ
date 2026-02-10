@@ -739,4 +739,161 @@ class ApiService {
       return false;
     }
   }
+
+  // ============ Claim APIs ============
+
+  /// Generate verification questions from ML service
+  Future<List<Map<String, dynamic>>> generateQuestions({
+    required String itemId,
+    int numQuestions = 5,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.claimQuestionsEndpoint(itemId,
+            numQuestions: numQuestions)),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['questions'] != null) {
+          return (data['questions'] as List)
+              .map((q) => Map<String, dynamic>.from(q))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error generating questions: $e');
+      return [];
+    }
+  }
+
+  /// Submit a claim for an item
+  Future<Map<String, dynamic>> submitClaim(
+      String itemId, String questionsAndAnswers) async {
+    try {
+      final response = await http.post(
+        Uri.parse(ApiConfig.claimsEndpoint),
+        headers: await _headers,
+        body: jsonEncode({
+          'itemId': itemId,
+          'questionsAndAnswers': questionsAndAnswers,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      return data;
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Get current user's claims
+  Future<List<Map<String, dynamic>>> getMyClaims() async {
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.myClaimsEndpoint),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['claims'] != null) {
+          return (data['claims'] as List)
+              .map((c) => Map<String, dynamic>.from(c))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching my claims: $e');
+      return [];
+    }
+  }
+
+  /// Get all claims (admin only)
+  Future<List<Map<String, dynamic>>> getAllClaimsAdmin() async {
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.adminAllClaimsEndpoint),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['claims'] != null) {
+          return (data['claims'] as List)
+              .map((c) => Map<String, dynamic>.from(c))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching all claims: $e');
+      return [];
+    }
+  }
+
+  /// Get claims for a specific item
+  Future<List<Map<String, dynamic>>> getClaimsForItem(String itemId) async {
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.claimsByItemEndpoint(itemId)),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['claims'] != null) {
+          return (data['claims'] as List)
+              .map((c) => Map<String, dynamic>.from(c))
+              .toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching claims for item: $e');
+      return [];
+    }
+  }
+
+  /// Review a claim (admin only)
+  Future<Map<String, dynamic>> reviewClaim(
+      String claimId, String status, String adminNotes) async {
+    try {
+      final response = await http.post(
+        Uri.parse(ApiConfig.reviewClaimEndpoint(claimId)),
+        headers: await _headers,
+        body: jsonEncode({
+          'status': status,
+          'adminNotes': adminNotes,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+      return data;
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
+  /// Check if current user has already claimed an item
+  Future<bool> hasUserClaimedItem(String itemId) async {
+    try {
+      final response = await http.get(
+        Uri.parse(ApiConfig.checkClaimEndpoint(itemId)),
+        headers: await _headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['hasClaimed'] == true;
+      }
+      return false;
+    } catch (e) {
+      print('Error checking claim status: $e');
+      return false;
+    }
+  }
 }

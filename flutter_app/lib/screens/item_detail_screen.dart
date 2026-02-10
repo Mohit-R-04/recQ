@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/app_provider.dart';
 import '../models/lost_found_item.dart';
 import '../config/api_config.dart';
+import '../services/api_service.dart';
+import 'claim_item_screen.dart';
 
 class ItemDetailScreen extends StatefulWidget {
   final String itemId;
@@ -17,12 +19,37 @@ class ItemDetailScreen extends StatefulWidget {
 class _ItemDetailScreenState extends State<ItemDetailScreen> {
   LostFoundItem? _item;
   bool _isLoading = true;
+  bool _hasClaimed = false;
+  bool _checkingClaim = true;
   final _commentController = TextEditingController();
+  final ApiService _apiService = ApiService();
 
   @override
   void initState() {
     super.initState();
     _loadItem();
+  }
+
+  Future<void> _checkClaimStatus() async {
+    if (_item == null) return;
+
+    // Only verify claim status for FOUND items
+    if (_item!.type != 'FOUND') {
+      setState(() => _checkingClaim = false);
+      return;
+    }
+
+    try {
+      final hasClaimed = await _apiService.hasUserClaimedItem(widget.itemId);
+      if (mounted) {
+        setState(() {
+          _hasClaimed = hasClaimed;
+          _checkingClaim = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _checkingClaim = false);
+    }
   }
 
   @override
@@ -34,11 +61,33 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   Future<void> _loadItem() async {
     final provider = Provider.of<AppProvider>(context, listen: false);
     final item = await provider.getItemById(widget.itemId);
-    
-    setState(() {
-      _item = item;
-      _isLoading = false;
-    });
+
+    if (mounted) {
+      setState(() {
+        _item = item;
+        _isLoading = false;
+      });
+      _checkClaimStatus();
+    }
+  }
+
+  void _onClaimPressed() async {
+    if (_item == null) return;
+
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ClaimItemScreen(
+          itemId: _item!.id!,
+          itemTitle: _item!.title!,
+          itemCategory: _item!.category ?? 'OTHERS',
+        ),
+      ),
+    );
+
+    if (result == true) {
+      _checkClaimStatus(); // Refresh status
+    }
   }
 
   Future<void> _addComment() async {
@@ -138,6 +187,13 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     final canEdit = provider.currentUser?.username == _item!.createdBy ||
         provider.currentUser?.isAdmin == true;
 
+    // 🔍 DEBUG PRINTS — REMOVE AFTER TESTING
+    print('ITEM TYPE: ${_item!.type}');
+    print('CREATED BY: ${_item!.createdBy}');
+    print('CURRENT USER: ${provider.currentUser?.username}');
+    print('HAS CLAIMED: $_hasClaimed');
+    print('CHECKING CLAIM: $_checkingClaim');
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Item Details'),
@@ -172,7 +228,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                   child: const Icon(Icons.image_not_supported, size: 80),
                 ),
               ),
-            
+
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -220,7 +276,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Title
                   Text(
                     _item!.title,
@@ -230,14 +286,17 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  
+
                   // Description
-                  Text(
-                    _item!.description,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 24),
-                  
+                  if (_item!.description.trim().isNotEmpty) ...[
+                    Text(
+                      _item!.description,
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 24),
+                  ] else
+                    const SizedBox(height: 8),
+
                   // Details
                   _buildDetailRow(
                     Icons.location_on,
@@ -255,36 +314,42 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                       'Collection Location',
                       _item!.collectionLocation!,
                     ),
-                  
+
                   const Divider(height: 32),
-                  
+
                   // Reporter Info
-                  const Text(
-                    'Reporter Information',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                  if (_item!.reporterName.trim().isNotEmpty ||
+                      _item!.reporterEmail.trim().isNotEmpty ||
+                      _item!.reporterPhoneNo.trim().isNotEmpty) ...[
+                    const Text(
+                      'Reporter Information',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildDetailRow(
-                    Icons.person,
-                    'Name',
-                    _item!.reporterName,
-                  ),
-                  _buildDetailRow(
-                    Icons.email,
-                    'Email',
-                    _item!.reporterEmail,
-                  ),
-                  _buildDetailRow(
-                    Icons.phone,
-                    'Phone',
-                    _item!.reporterPhoneNo,
-                  ),
-                  
-                  const Divider(height: 32),
-                  
+                    const SizedBox(height: 12),
+                    if (_item!.reporterName.trim().isNotEmpty)
+                      _buildDetailRow(
+                        Icons.person,
+                        'Name',
+                        _item!.reporterName,
+                      ),
+                    if (_item!.reporterEmail.trim().isNotEmpty)
+                      _buildDetailRow(
+                        Icons.email,
+                        'Email',
+                        _item!.reporterEmail,
+                      ),
+                    if (_item!.reporterPhoneNo.trim().isNotEmpty)
+                      _buildDetailRow(
+                        Icons.phone,
+                        'Phone',
+                        _item!.reporterPhoneNo,
+                      ),
+                    const Divider(height: 32),
+                  ],
+
                   // Comments Section
                   const Text(
                     'Comments',
@@ -294,7 +359,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  
+
                   if (_item!.comments != null && _item!.comments!.isNotEmpty)
                     ..._item!.comments!.map((comment) => Card(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -324,9 +389,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                       'No comments yet',
                       style: TextStyle(color: Colors.grey[600]),
                     ),
-                  
+
                   const SizedBox(height: 16),
-                  
+
                   // Add Comment
                   Row(
                     children: [
@@ -350,6 +415,92 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+
+            // Claim Section
+            if (_item!.type != 'FOUND')
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: const Text(
+                  'Claims are only available for items marked as found.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else if (provider.currentUser?.username == _item!.createdBy)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'You reported this item as found.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: _checkingClaim
+                      ? const Center(child: CircularProgressIndicator())
+                      : _hasClaimed
+                          ? Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.green[50],
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.green[200]!),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.check_circle,
+                                      color: Colors.green[700]),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'You have claimed this item',
+                                    style: TextStyle(
+                                      color: Colors.green[800],
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ElevatedButton.icon(
+                              onPressed: _onClaimPressed,
+                              icon: const Icon(Icons.back_hand),
+                              label: const Text('Claim This Item'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6C47FF),
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 3,
+                              ),
+                            ),
+                ),
+              ),
+
+            const SizedBox(height: 32),
           ],
         ),
       ),
