@@ -19,7 +19,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  String _filter = 'all'; // all, lost, found, my
+  String _filter = 'all'; // all, lost, found, my, given
   final ApiService _apiService = ApiService();
   int _notificationCount = 0;
   int _matchCount = 0;
@@ -48,16 +48,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final provider = Provider.of<AppProvider>(context, listen: false);
 
     switch (_filter) {
+      case 'given':
+        return items.where((item) => item.isCollected).toList();
       case 'lost':
-        return items.where((item) => item.type == 'LOST').toList();
+        return items
+            .where((item) => !item.isCollected && item.type == 'LOST')
+            .toList();
       case 'found':
-        return items.where((item) => item.type == 'FOUND').toList();
+        return items
+            .where((item) => !item.isCollected && item.type == 'FOUND')
+            .toList();
       case 'my':
         return items
-            .where((item) => item.createdBy == provider.currentUser?.username)
+            .where((item) =>
+                !item.isCollected &&
+                item.createdBy == provider.currentUser?.username)
             .toList();
       default:
-        return items;
+        return items.where((item) => !item.isCollected).toList();
     }
   }
 
@@ -177,6 +185,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildFilterChip('Found', 'found'),
                       const SizedBox(width: 8),
                       _buildFilterChip('My Items', 'my'),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('Given', 'given'),
                     ],
                   ),
                 ),
@@ -338,6 +348,27 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
+                      if (item.isCollected) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.teal[100],
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'COLLECTED',
+                            style: TextStyle(
+                              color: Colors.teal[900],
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 12),

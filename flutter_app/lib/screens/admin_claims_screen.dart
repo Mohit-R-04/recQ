@@ -101,6 +101,11 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     }
   }
 
+  bool _isItemGiven(String? itemId) {
+    if (itemId == null || itemId.isEmpty) return false;
+    return _allClaims.any((c) => c.item?.id == itemId && c.status == 'COLLECTED');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -140,7 +145,7 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
               ),
             ),
             Tab(
-              text: 'Collected',
+              text: 'Given',
               icon: Badge(
                 label: Text(_filterClaims('COLLECTED').length.toString()),
                 isLabelVisible: _filterClaims('COLLECTED').isNotEmpty,
@@ -300,6 +305,8 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
     } catch (_) {}
 
     final notesController = TextEditingController(text: claim.adminNotes ?? '');
+    final itemGiven = _isItemGiven(claim.item?.id);
+    final isLockedByGiven = itemGiven && claim.status != 'COLLECTED';
 
     showModalBottomSheet(
       context: context,
@@ -494,7 +501,30 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
             const SizedBox(height: 24),
 
             // Action buttons
-            if (claim.status == 'PENDING' || claim.status == 'UNDER_REVIEW')
+            if (isLockedByGiven)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange[100]!),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'This item is already marked as given to an owner. This claim is locked and will appear under Rejected.',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (!isLockedByGiven &&
+                (claim.status == 'PENDING' || claim.status == 'UNDER_REVIEW'))
               Row(
                 children: [
                   Expanded(
@@ -533,7 +563,7 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                 ],
               ),
 
-            if (claim.status == 'APPROVED')
+            if (!isLockedByGiven && claim.status == 'APPROVED')
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -552,14 +582,14 @@ class _AdminClaimsScreenState extends State<AdminClaimsScreen>
                 ),
               ),
 
-            if (claim.status == 'READY_TO_COLLECT')
+            if (!isLockedByGiven && claim.status == 'READY_TO_COLLECT')
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () => _updateClaimStatus(
                       claim, 'COLLECTED', notesController.text),
                   icon: const Icon(Icons.done_all),
-                  label: const Text('Mark as Collected'),
+                  label: const Text('Mark as Given to Owner'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.teal,
                     foregroundColor: Colors.white,

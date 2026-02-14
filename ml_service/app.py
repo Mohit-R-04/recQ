@@ -10,6 +10,33 @@ from tensorflow.keras.preprocessing import image
 import tempfile
 from typing import List, Dict
 
+try:
+    from dotenv import load_dotenv
+except Exception:
+    load_dotenv = None
+
+dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
+
+if load_dotenv is not None:
+    load_dotenv(dotenv_path)
+else:
+    try:
+        if os.path.exists(dotenv_path):
+            with open(dotenv_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key and key not in os.environ:
+                        os.environ[key] = value
+    except Exception:
+        pass
+
 # Import embedding and matching services
 from embedding_service import (
     get_text_embedding,
@@ -513,11 +540,18 @@ def generate_verification_questions():
             num_questions=num_questions
         )
 
+        use_transformer = os.getenv("QG_USE_TRANSFORMER", "false").strip().lower()
+        transformer_enabled = use_transformer not in {"0", "false", "no", "off"}
+        transformer_used = any(q.get("type") == "transformer" for q in questions)
+        print(f"[QG] transformer_enabled={transformer_enabled} transformer_used={transformer_used}")
+
         return jsonify({
             'success': True,
             'questions': questions,
             'count': len(questions),
-            'keywords': extract_keywords(title + ' ' + description)
+            'keywords': extract_keywords(title + ' ' + description),
+            'transformerEnabled': transformer_enabled,
+            'transformerUsed': transformer_used
         })
     except Exception as e:
         return jsonify({

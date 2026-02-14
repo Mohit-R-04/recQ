@@ -25,7 +25,13 @@ public interface ClaimRepository extends JpaRepository<Claim, UUID> {
 
     Long countByItemAndStatus(LostFoundItem item, ClaimStatus status);
 
+    Long countByItemAndStatusAndIdNot(LostFoundItem item, ClaimStatus status, UUID id);
+
+    List<Claim> findByItemAndIdNot(LostFoundItem item, UUID id);
+
     List<Claim> findAllByOrderByCreatedAtDesc();
 
     boolean existsByItemAndClaimant(LostFoundItem item, User claimant);
+
+    void deleteByItem(LostFoundItem item);
 }

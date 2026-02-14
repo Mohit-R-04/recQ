@@ -63,6 +63,8 @@ class ApiConfig {
 
   // Helper methods
   static String itemByIdEndpoint(String itemId) => '$itemsEndpoint/$itemId';
+  static String itemDescriptionEndpoint(String itemId) =>
+      '$itemsEndpoint/$itemId/description';
 
   static String itemsByUserEndpoint(int userId) =>
       '$itemsEndpoint/user/$userId';

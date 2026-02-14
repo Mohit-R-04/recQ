@@ -34,7 +34,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     if (_item == null) return;
 
     // Only verify claim status for FOUND items
-    if (_item!.type != 'FOUND') {
+    if (_item!.type != 'FOUND' || _item!.isCollected) {
       setState(() => _checkingClaim = false);
       return;
     }
@@ -122,6 +122,71 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     }
   }
 
+  Future<void> _addAdminDescription() async {
+    if (_item == null) return;
+    final controller = TextEditingController();
+
+    final description = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Description'),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            hintText: 'Enter description for this item...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(null),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (description == null) return;
+    if (description.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Description cannot be empty'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final result =
+        await _apiService.updateItemDescription(_item!.id!, description);
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      setState(() {
+        _item = result['item'] as LostFoundItem?;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Description added successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message'] ?? 'Failed to update description'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _deleteItem() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -186,6 +251,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     final provider = Provider.of<AppProvider>(context);
     final canEdit = provider.currentUser?.username == _item!.createdBy ||
         provider.currentUser?.isAdmin == true;
+    final isAdmin = provider.currentUser?.isAdmin == true;
 
     // 🔍 DEBUG PRINTS — REMOVE AFTER TESTING
     print('ITEM TYPE: ${_item!.type}');
@@ -273,6 +339,26 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                           style: TextStyle(color: Colors.blue[900]),
                         ),
                       ),
+                      if (_item!.isCollected) ...[
+                        const SizedBox(width: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.teal[100],
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'COLLECTED',
+                            style: TextStyle(
+                              color: Colors.teal[900],
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -285,6 +371,20 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (isAdmin &&
+                      (_item!.type == 'FOUND') &&
+                      (_item!.description.trim().isEmpty) &&
+                      !_item!.isCollected) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _addAdminDescription,
+                        icon: const Icon(Icons.edit_note),
+                        label: const Text('Add Description (Admin)'),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
 
                   // Description
@@ -432,6 +532,22 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                   'Claims are only available for items marked as found.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else if (_item!.isCollected)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.teal[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.teal[200]!),
+                ),
+                child: Text(
+                  'This item has been collected by an owner. Claims are closed.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.teal[800]),
                 ),
               )
             else if (provider.currentUser?.username == _item!.createdBy)

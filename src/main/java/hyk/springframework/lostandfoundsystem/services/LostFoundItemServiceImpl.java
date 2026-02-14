@@ -1,15 +1,24 @@
 package hyk.springframework.lostandfoundsystem.services;
 
 import hyk.springframework.lostandfoundsystem.domain.LostFoundItem;
+import hyk.springframework.lostandfoundsystem.domain.ItemMatch;
 import hyk.springframework.lostandfoundsystem.enums.Type;
 import hyk.springframework.lostandfoundsystem.exceptions.ResourceNotFoundException;
+import hyk.springframework.lostandfoundsystem.repositories.ClaimRepository;
+import hyk.springframework.lostandfoundsystem.repositories.ItemEmbeddingRepository;
+import hyk.springframework.lostandfoundsystem.repositories.ItemMatchRepository;
 import hyk.springframework.lostandfoundsystem.repositories.LostFoundItemRepository;
+import hyk.springframework.lostandfoundsystem.repositories.NotificationRepository;
 import hyk.springframework.lostandfoundsystem.util.LoginUserUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -20,6 +29,10 @@ import java.util.UUID;
 public class LostFoundItemServiceImpl implements LostFoundItemService {
 
     private final LostFoundItemRepository lostFoundItemRepository;
+    private final ItemMatchRepository itemMatchRepository;
+    private final NotificationRepository notificationRepository;
+    private final ClaimRepository claimRepository;
+    private final ItemEmbeddingRepository itemEmbeddingRepository;
 
     @Override
     public List<LostFoundItem> findAllItems() {
@@ -48,11 +61,35 @@ public class LostFoundItemServiceImpl implements LostFoundItemService {
     }
 
     @Override
+    @Transactional
     public void deleteItemById(UUID itemId) {
-        if (findItemById(itemId) != null) {
-            log.debug("Service Layer - Delete lost/found items by item ID: " + itemId);
-            lostFoundItemRepository.deleteById(itemId);
+        LostFoundItem item = findItemById(itemId);
+        log.debug("Service Layer - Delete lost/found items by item ID: " + itemId);
+
+        List<ItemMatch> matches = new ArrayList<>();
+        matches.addAll(itemMatchRepository.findByLostItemOrderByConfidenceScoreDesc(item));
+        matches.addAll(itemMatchRepository.findByFoundItemOrderByConfidenceScoreDesc(item));
+
+        Set<UUID> seenMatchIds = new HashSet<>();
+        List<ItemMatch> uniqueMatches = new ArrayList<>();
+        for (ItemMatch match : matches) {
+            if (match.getId() != null && seenMatchIds.add(match.getId())) {
+                uniqueMatches.add(match);
+            }
         }
+
+        notificationRepository.deleteByRelatedItem(item);
+        if (!uniqueMatches.isEmpty()) {
+            notificationRepository.deleteByRelatedMatchIn(uniqueMatches);
+        }
+
+        itemMatchRepository.deleteByLostItem(item);
+        itemMatchRepository.deleteByFoundItem(item);
+
+        claimRepository.deleteByItem(item);
+        itemEmbeddingRepository.deleteByItem(item);
+
+        lostFoundItemRepository.delete(item);
     }
 
     @Override

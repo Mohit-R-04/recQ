@@ -107,11 +107,16 @@ class _ClaimItemScreenState extends State<ClaimItemScreen> {
 
       if (mounted) {
         if (result['success'] == true) {
+          final status = (result['claim']?['status'] ?? '').toString();
+          final message = (result['message'] ??
+                  'Claim submitted successfully! Admin will review your answers.')
+              .toString();
+          final backgroundColor =
+              status == 'REJECTED' ? Colors.orange : Colors.green;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                  'Claim submitted successfully! Admin will review your answers.'),
-              backgroundColor: Colors.green,
+            SnackBar(
+              content: Text(message),
+              backgroundColor: backgroundColor,
             ),
           );
           Navigator.pop(context, true); // Return true to indicate success

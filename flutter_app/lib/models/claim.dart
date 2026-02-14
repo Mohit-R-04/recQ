@@ -54,7 +54,7 @@ class Claim {
       case 'READY_TO_COLLECT':
         return 'Ready to Collect';
       case 'COLLECTED':
-        return 'Collected';
+        return 'Item Given';
       default:
         return status;
     }

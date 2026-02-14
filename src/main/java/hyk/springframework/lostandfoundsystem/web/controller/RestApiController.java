@@ -5,6 +5,8 @@ import hyk.springframework.lostandfoundsystem.domain.LostFoundItem;
 import hyk.springframework.lostandfoundsystem.domain.security.Role;
 import hyk.springframework.lostandfoundsystem.domain.security.User;
 import hyk.springframework.lostandfoundsystem.enums.ClaimStatus;
+import hyk.springframework.lostandfoundsystem.enums.Type;
+import hyk.springframework.lostandfoundsystem.repositories.ClaimRepository;
 import hyk.springframework.lostandfoundsystem.services.ClaimService;
 import hyk.springframework.lostandfoundsystem.services.LostFoundItemService;
 import hyk.springframework.lostandfoundsystem.services.UserService;
@@ -36,6 +38,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Timestamp;
 import java.util.*;
 
 /**
@@ -50,6 +53,7 @@ public class RestApiController {
 
     private final LostFoundItemService lostFoundItemService;
     private final UserService userService;
+    private final ClaimRepository claimRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final hyk.springframework.lostandfoundsystem.services.OtpService otpService;
@@ -451,6 +455,52 @@ public class RestApiController {
         }
     }
 
+    @PutMapping("/items/{itemId}/description")
+    public ResponseEntity<?> updateItemDescription(@PathVariable UUID itemId, @RequestBody Map<String, String> body) {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            String description = body.get("description");
+            if (description == null || description.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description is required"));
+            }
+            if (description.length() > 255) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description must be 255 characters or less"));
+            }
+
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+            if (item.getType() != Type.FOUND) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description can only be added for FOUND items"));
+            }
+            if (item.getDescription() != null && !item.getDescription().isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description is already set for this item"));
+            }
+
+            item.setDescription(description.trim());
+            item.setDescriptionAddedBy(LoginUserUtil.getLoginUser().getUsername());
+            item.setDescriptionAddedAt(new Timestamp(System.currentTimeMillis()));
+            item.setModifiedBy(LoginUserUtil.getLoginUser().getUsername());
+            LostFoundItem savedItem = lostFoundItemService.saveItem(item);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("item", itemToDto(savedItem, true));
+            response.put("message", "Description added successfully");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to update item description", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to update description: " + e.getMessage()));
+        }
+    }
+
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<?> deleteItem(@PathVariable UUID itemId) {
         try {
@@ -472,7 +522,7 @@ public class RestApiController {
             log.error("Failed to delete item", e);
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
-            response.put("message", "Failed to delete item: " + e.getMessage());
+            response.put("message", "Failed to delete item");
             return ResponseEntity.badRequest().body(response);
         }
     }
@@ -833,7 +883,11 @@ public class RestApiController {
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("claim", claimToDto(claim));
-            response.put("message", "Claim submitted successfully. Admin will review your answers.");
+            String message = "Claim submitted successfully. Admin will review your answers.";
+            if (claim.getStatus() == ClaimStatus.REJECTED) {
+                message = "This item has already been given to an owner. Your claim has been recorded as rejected.";
+            }
+            response.put("message", message);
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             log.error("Failed to submit claim", e);
@@ -996,6 +1050,9 @@ public class RestApiController {
         dto.put("longitude", item.getLongitude());
         dto.put("collectionLocation", item.getCollectionLocation());
 
+        Long collectedCount = claimRepository.countByItemAndStatus(item, ClaimStatus.COLLECTED);
+        dto.put("isCollected", collectedCount != null && collectedCount > 0);
+
         boolean isOwner = false;
         if (!isAdmin) {
             try {
@@ -1027,11 +1084,15 @@ public class RestApiController {
         // Description and reporter info: ONLY visible to admin
         if (isAdmin) {
             dto.put("description", item.getDescription());
+            dto.put("descriptionAddedBy", item.getDescriptionAddedBy());
+            dto.put("descriptionAddedAt", item.getDescriptionAddedAt() != null ? item.getDescriptionAddedAt().toString() : null);
             dto.put("reporterName", item.getReporterName());
             dto.put("reporterEmail", item.getReporterEmail());
             dto.put("reporterPhoneNo", item.getReporterPhoneNo());
         } else {
             dto.put("description", ""); // hidden from regular users
+            dto.put("descriptionAddedBy", null);
+            dto.put("descriptionAddedAt", null);
             dto.put("reporterName", "");
             dto.put("reporterEmail", "");
             dto.put("reporterPhoneNo", "");

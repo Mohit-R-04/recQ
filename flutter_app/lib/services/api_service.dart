@@ -318,6 +318,30 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> updateItemDescription(
+      String itemId, String description) async {
+    try {
+      final response = await http.put(
+        Uri.parse(ApiConfig.itemDescriptionEndpoint(itemId)),
+        headers: await _headers,
+        body: jsonEncode({'description': description}),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        return {'success': true, 'item': LostFoundItem.fromJson(data['item'])};
+      } else {
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Failed to update description'
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
+  }
+
   Future<Map<String, dynamic>> deleteItem(String itemId) async {
     try {
       final response = await http.delete(
