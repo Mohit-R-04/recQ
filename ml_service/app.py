@@ -7,13 +7,12 @@ import numpy as np
 import os
 import tempfile
 import zipfile
-from typing import Dict
-from typing import List
+from typing import List, Dict
 
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
 
-tf = None
-image = None
+import tensorflow as tf
+from tensorflow.keras.preprocessing import image
 
 try:
     from dotenv import load_dotenv
@@ -42,34 +41,26 @@ else:
     except Exception:
         pass
 
-
-def _env_enabled(name: str, default: str = "false") -> bool:
-    value = os.getenv(name, default).strip().lower()
-    return value not in {"0", "false", "no", "off"}
-
-
-ENABLE_IMAGE_CLASSIFIER = _env_enabled("ML_ENABLE_IMAGE_CLASSIFIER", "false")
-ENABLE_EMBEDDINGS = _env_enabled("ML_ENABLE_EMBEDDINGS", "true")
-ENABLE_MATCHING = _env_enabled("ML_ENABLE_MATCHING", "true")
-
-_embedding_service = None
-_matching_engine = None
-
-
-def _get_embedding_service():
-    global _embedding_service
-    if _embedding_service is None:
-        import embedding_service as _es
-        _embedding_service = _es
-    return _embedding_service
-
-
-def _get_matching_engine():
-    global _matching_engine
-    if _matching_engine is None:
-        import matching_engine as _me
-        _matching_engine = _me
-    return _matching_engine
+# Import embedding and matching services
+from embedding_service import (
+    get_text_embedding,
+    get_image_embedding,
+    get_image_embedding_from_bytes,
+    embedding_to_list,
+    list_to_embedding,
+    IMAGE_EMBEDDING_DIM,
+    TEXT_EMBEDDING_DIM
+)
+from matching_engine import (
+    ItemEmbeddings,
+    MatchResult,
+    create_item_embeddings,
+    find_matches_for_item,
+    batch_find_all_matches,
+    calculate_match_score,
+    MATCH_THRESHOLD,
+    TOP_K_MATCHES
+)
 
 # ======================================================
 # CONFIG
@@ -106,68 +97,54 @@ def map_predicted_class_to_backend_category(predicted_class: str) -> str:
 # ======================================================
 # LOAD MODEL
 # ======================================================
-model = None
-class_names: List[str] = []
-
-
-def _ensure_classifier_loaded() -> bool:
-    global tf, image, model, class_names
-    if not ENABLE_IMAGE_CLASSIFIER:
-        return False
-    if model is not None and class_names:
-        return True
-
-    import tensorflow as _tf
-    from tensorflow.keras.preprocessing import image as _image
-
-    tf = _tf
-    image = _image
-
-    print("Loading model...")
+print("Loading model...")
+try:
     model_load_path = MODEL_PATH
     packed_model_path = None
-    try:
-        if os.path.isdir(MODEL_PATH):
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".keras")
-            tmp.close()
-            packed_model_path = tmp.name
-            with zipfile.ZipFile(packed_model_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                for root, _, files in os.walk(MODEL_PATH):
-                    for filename in files:
-                        file_path = os.path.join(root, filename)
-                        arcname = os.path.relpath(file_path, MODEL_PATH)
-                        zf.write(file_path, arcname)
-            model_load_path = packed_model_path
 
-        model = tf.keras.models.load_model(model_load_path, compile=False)
-        model.compile(
-            optimizer='adam',
-            loss='sparse_categorical_crossentropy',
-            metrics=['accuracy']
-        )
-    except Exception as e:
-        print(f"Error loading model with tf.keras: {e}")
-        print("Trying alternative loading method...")
-        import keras
-        model = keras.models.load_model(model_load_path, compile=False)
-        model.compile(
-            optimizer='adam',
-            loss='sparse_categorical_crossentropy',
-            metrics=['accuracy']
-        )
-    finally:
-        if packed_model_path is not None:
-            try:
-                os.unlink(packed_model_path)
-            except Exception:
-                pass
+    if os.path.isdir(MODEL_PATH):
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".keras")
+        tmp.close()
+        packed_model_path = tmp.name
+        with zipfile.ZipFile(packed_model_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(MODEL_PATH):
+                for filename in files:
+                    file_path = os.path.join(root, filename)
+                    arcname = os.path.relpath(file_path, MODEL_PATH)
+                    zf.write(file_path, arcname)
+        model_load_path = packed_model_path
 
-    with open(CLASS_NAMES_PATH) as f:
-        class_names = [line.strip() for line in f]
+    # Try loading with compile=False to avoid optimizer compatibility issues
+    model = tf.keras.models.load_model(model_load_path, compile=False)
+    # Recompile with compatible settings
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+except Exception as e:
+    print(f"Error loading model with tf.keras: {e}")
+    print("Trying alternative loading method...")
+    # Fallback: try loading without custom objects
+    import keras
+    model = keras.models.load_model(model_load_path, compile=False)
+    model.compile(
+        optimizer='adam',
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+finally:
+    if 'packed_model_path' in locals() and packed_model_path is not None:
+        try:
+            os.unlink(packed_model_path)
+        except Exception:
+            pass
 
-    print("Model loaded successfully")
-    print("Classes:", class_names)
-    return True
+with open(CLASS_NAMES_PATH) as f:
+    class_names = [line.strip() for line in f]
+
+print("Model loaded successfully")
+print("Classes:", class_names)
 
 # ======================================================
 # FLASK APP
@@ -179,7 +156,6 @@ CORS(app)  # Enable CORS for Flutter app
 # IMAGE PREPROCESSING
 # ======================================================
 def preprocess(img_path):
-    _ensure_classifier_loaded()
     img = image.load_img(img_path, target_size=IMG_SIZE)
     img = image.img_to_array(img)
     img = tf.keras.applications.efficientnet.preprocess_input(img)
@@ -189,7 +165,6 @@ def preprocess(img_path):
 # PREDICTION FUNCTION
 # ======================================================
 def predict_image(img_path):
-    _ensure_classifier_loaded()
     x = preprocess(img_path)
     preds = model.predict(x, verbose=0)[0]
 
@@ -217,17 +192,12 @@ def predict_image(img_path):
 def health():
     return jsonify({
         'status': 'healthy',
-        'imageClassifierEnabled': ENABLE_IMAGE_CLASSIFIER,
-        'embeddingsEnabled': ENABLE_EMBEDDINGS,
-        'matchingEnabled': ENABLE_MATCHING,
-        'model': MODEL_PATH if ENABLE_IMAGE_CLASSIFIER else None,
-        'classes': class_names if ENABLE_IMAGE_CLASSIFIER else []
+        'model': MODEL_PATH,
+        'classes': class_names
     })
 
 @app.route('/classify', methods=['POST'])
 def classify():
-    if not ENABLE_IMAGE_CLASSIFIER:
-        return jsonify({'success': False, 'message': 'Image classifier disabled'}), 503
     if 'image' not in request.files:
         return jsonify({
             'success': False,
@@ -273,8 +243,6 @@ def classify():
 
 @app.route('/categories', methods=['GET'])
 def get_categories():
-    if not ENABLE_IMAGE_CLASSIFIER:
-        return jsonify({'success': False, 'message': 'Image classifier disabled'}), 503
     return jsonify({
         'mlClasses': class_names,
         'categoryMapping': ML_TO_BACKEND_CATEGORY
@@ -288,17 +256,15 @@ def get_categories():
 def generate_text_embedding():
     """Generate text embedding for a given text"""
     try:
-        if not ENABLE_EMBEDDINGS:
-            return jsonify({'success': False, 'message': 'Embeddings disabled'}), 503
         data = request.get_json()
         text = data.get('text', '')
         
-        embedding = _get_embedding_service().get_text_embedding(text)
+        embedding = get_text_embedding(text)
         
         return jsonify({
             'success': True,
-            'embedding': _get_embedding_service().embedding_to_list(embedding),
-            'dimension': _get_embedding_service().TEXT_EMBEDDING_DIM
+            'embedding': embedding_to_list(embedding),
+            'dimension': TEXT_EMBEDDING_DIM
         })
     except Exception as e:
         return jsonify({
@@ -310,8 +276,6 @@ def generate_text_embedding():
 def generate_image_embedding():
     """Generate image embedding for an uploaded image"""
     try:
-        if not ENABLE_EMBEDDINGS:
-            return jsonify({'success': False, 'message': 'Embeddings disabled'}), 503
         if 'image' not in request.files:
             return jsonify({
                 'success': False,
@@ -328,12 +292,12 @@ def generate_image_embedding():
         
         # Read image bytes and generate embedding
         img_bytes = file.read()
-        embedding = _get_embedding_service().get_image_embedding_from_bytes(img_bytes)
+        embedding = get_image_embedding_from_bytes(img_bytes)
         
         return jsonify({
             'success': True,
-            'embedding': _get_embedding_service().embedding_to_list(embedding),
-            'dimension': _get_embedding_service().IMAGE_EMBEDDING_DIM
+            'embedding': embedding_to_list(embedding),
+            'dimension': IMAGE_EMBEDDING_DIM
         })
     except Exception as e:
         return jsonify({
@@ -345,8 +309,6 @@ def generate_image_embedding():
 def generate_item_embeddings():
     """Generate all embeddings for an item (text + optional image)"""
     try:
-        if not ENABLE_EMBEDDINGS:
-            return jsonify({'success': False, 'message': 'Embeddings disabled'}), 503
         # Handle multipart form data
         item_id = request.form.get('itemId', '')
         item_type = request.form.get('itemType', 'LOST')
@@ -357,7 +319,7 @@ def generate_item_embeddings():
         
         # Generate text embedding
         combined_text = f"{title}. {description}" if description else title
-        text_embedding = _get_embedding_service().get_text_embedding(combined_text)
+        text_embedding = get_text_embedding(combined_text)
         
         # Generate image embedding if provided
         has_image = False
@@ -367,7 +329,7 @@ def generate_item_embeddings():
             file = request.files['image']
             if file.filename != '':
                 img_bytes = file.read()
-                image_embedding = _get_embedding_service().get_image_embedding_from_bytes(img_bytes)
+                image_embedding = get_image_embedding_from_bytes(img_bytes)
                 has_image = True
         
         return jsonify({
@@ -376,8 +338,8 @@ def generate_item_embeddings():
             'itemType': item_type,
             'category': category,
             'userId': user_id,
-            'textEmbedding': _get_embedding_service().embedding_to_list(text_embedding),
-            'imageEmbedding': _get_embedding_service().embedding_to_list(image_embedding) if has_image else None,
+            'textEmbedding': embedding_to_list(text_embedding),
+            'imageEmbedding': embedding_to_list(image_embedding) if has_image else None,
             'hasImage': has_image
         })
     except Exception as e:
@@ -391,16 +353,12 @@ def generate_item_embeddings():
 # ======================================================
 
 # In-memory storage for item embeddings (for demo - should use database in production)
-item_embeddings_store: Dict[str, object] = {}
+item_embeddings_store: Dict[str, ItemEmbeddings] = {}
 
 @app.route('/matching/register', methods=['POST'])
 def register_item_for_matching():
     """Register an item's embeddings for matching"""
     try:
-        if not ENABLE_MATCHING:
-            return jsonify({'success': False, 'message': 'Matching disabled'}), 503
-        me = _get_matching_engine()
-        es = _get_embedding_service()
         data = request.get_json()
         
         item_id = data.get('itemId')
@@ -412,11 +370,11 @@ def register_item_for_matching():
         
         # Check if embeddings are pre-computed
         if 'textEmbedding' in data and data['textEmbedding']:
-            text_emb = es.list_to_embedding(data['textEmbedding'])
+            text_emb = list_to_embedding(data['textEmbedding'])
             has_image = data.get('hasImage', False)
-            image_emb = es.list_to_embedding(data['imageEmbedding']) if has_image and data.get('imageEmbedding') else np.zeros(es.IMAGE_EMBEDDING_DIM)
+            image_emb = list_to_embedding(data['imageEmbedding']) if has_image and data.get('imageEmbedding') else np.zeros(IMAGE_EMBEDDING_DIM)
             
-            item = me.ItemEmbeddings(
+            item = ItemEmbeddings(
                 item_id=item_id,
                 item_type=item_type,
                 category=category,
@@ -430,14 +388,14 @@ def register_item_for_matching():
         else:
             # Generate embeddings from text
             combined_text = f"{title}. {description}" if description else title
-            text_emb = es.get_text_embedding(combined_text)
+            text_emb = get_text_embedding(combined_text)
             
-            item = me.ItemEmbeddings(
+            item = ItemEmbeddings(
                 item_id=item_id,
                 item_type=item_type,
                 category=category,
                 text_embedding=text_emb,
-                image_embedding=np.zeros(es.IMAGE_EMBEDDING_DIM),
+                image_embedding=np.zeros(IMAGE_EMBEDDING_DIM),
                 has_image=False,
                 title=title,
                 description=description,
@@ -462,12 +420,9 @@ def register_item_for_matching():
 def find_matches():
     """Find matches for a specific item"""
     try:
-        if not ENABLE_MATCHING:
-            return jsonify({'success': False, 'message': 'Matching disabled'}), 503
-        me = _get_matching_engine()
         data = request.get_json()
         item_id = data.get('itemId')
-        top_k = data.get('topK', me.TOP_K_MATCHES)
+        top_k = data.get('topK', TOP_K_MATCHES)
         
         if item_id not in item_embeddings_store:
             return jsonify({
@@ -478,7 +433,7 @@ def find_matches():
         target_item = item_embeddings_store[item_id]
         existing_items = list(item_embeddings_store.values())
         
-        matches = me.find_matches_for_item(target_item, existing_items, top_k)
+        matches = find_matches_for_item(target_item, existing_items, top_k)
         
         return jsonify({
             'success': True,
@@ -497,9 +452,6 @@ def find_matches():
 def compare_two_items():
     """Compare two specific items and get their match score"""
     try:
-        if not ENABLE_MATCHING:
-            return jsonify({'success': False, 'message': 'Matching disabled'}), 503
-        me = _get_matching_engine()
         data = request.get_json()
         lost_item_id = data.get('lostItemId')
         found_item_id = data.get('foundItemId')
@@ -519,7 +471,7 @@ def compare_two_items():
         lost_item = item_embeddings_store[lost_item_id]
         found_item = item_embeddings_store[found_item_id]
         
-        result = me.calculate_match_score(lost_item, found_item)
+        result = calculate_match_score(lost_item, found_item)
         
         return jsonify({
             'success': True,
@@ -535,14 +487,11 @@ def compare_two_items():
 def get_all_matches():
     """Get all potential matches between lost and found items"""
     try:
-        if not ENABLE_MATCHING:
-            return jsonify({'success': False, 'message': 'Matching disabled'}), 503
-        me = _get_matching_engine()
-        top_k = request.args.get('topK', me.TOP_K_MATCHES, type=int)
-        threshold = request.args.get('threshold', me.MATCH_THRESHOLD, type=float)
+        top_k = request.args.get('topK', TOP_K_MATCHES, type=int)
+        threshold = request.args.get('threshold', MATCH_THRESHOLD, type=float)
         
         items = list(item_embeddings_store.values())
-        matches = me.batch_find_all_matches(items, top_k)
+        matches = batch_find_all_matches(items, top_k)
         
         # Filter by threshold
         matches = [m for m in matches if m.confidence_score >= threshold]
@@ -565,8 +514,6 @@ def get_all_matches():
 def unregister_item(item_id):
     """Remove an item from the matching store"""
     try:
-        if not ENABLE_MATCHING:
-            return jsonify({'success': False, 'message': 'Matching disabled'}), 503
         if item_id in item_embeddings_store:
             del item_embeddings_store[item_id]
             return jsonify({
@@ -588,9 +535,6 @@ def unregister_item(item_id):
 def get_matching_stats():
     """Get statistics about the matching store"""
     try:
-        if not ENABLE_MATCHING:
-            return jsonify({'success': False, 'message': 'Matching disabled'}), 503
-        me = _get_matching_engine()
         items = list(item_embeddings_store.values())
         lost_count = len([i for i in items if i.item_type == 'LOST'])
         found_count = len([i for i in items if i.item_type == 'FOUND'])
@@ -600,8 +544,8 @@ def get_matching_stats():
             'totalItems': len(items),
             'lostCount': lost_count,
             'foundCount': found_count,
-            'threshold': me.MATCH_THRESHOLD,
-            'topK': me.TOP_K_MATCHES
+            'threshold': MATCH_THRESHOLD,
+            'topK': TOP_K_MATCHES
         })
     except Exception as e:
         return jsonify({
