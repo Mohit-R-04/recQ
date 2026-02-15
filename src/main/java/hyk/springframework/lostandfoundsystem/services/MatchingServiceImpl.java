@@ -9,11 +9,16 @@ import hyk.springframework.lostandfoundsystem.repositories.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -100,6 +105,35 @@ public class MatchingServiceImpl implements MatchingService {
             body.add("category", item.getCategory().name());
             body.add("userId", item.getUser() != null ? item.getUser().getId().toString() : "");
 
+            String imageUrl = item.getImageUrl();
+            if (imageUrl != null && !imageUrl.trim().isEmpty()) {
+                String trimmed = imageUrl.trim();
+                try {
+                    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                        byte[] bytes = restTemplate.getForObject(trimmed, byte[].class);
+                        if (bytes != null && bytes.length > 0) {
+                            ByteArrayResource resource = new ByteArrayResource(bytes) {
+                                @Override
+                                public String getFilename() {
+                                    return "item.jpg";
+                                }
+                            };
+                            body.add("image", resource);
+                        }
+                    } else {
+                        String relative = trimmed.startsWith("/") ? trimmed.substring(1) : trimmed;
+                        Path path = Paths.get("src/main/resources/static").resolve(relative).normalize();
+                        if (Files.exists(path) && Files.isRegularFile(path)) {
+                            body.add("image", new FileSystemResource(path.toFile()));
+                        } else {
+                            log.warn("Image file not found for item {} at {}", item.getId(), path);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to attach image for item {} (imageUrl={}): {}", item.getId(), trimmed, e.getMessage());
+                }
+            }
+
             HttpEntity<org.springframework.util.LinkedMultiValueMap<String, Object>> request = new HttpEntity<>(body,
                     headers);
 
@@ -173,6 +207,20 @@ public class MatchingServiceImpl implements MatchingService {
         }
     }
 
+    private void registerAllItemsWithMlService() {
+        try {
+            List<ItemEmbedding> embeddings = embeddingRepository.findAll();
+            for (ItemEmbedding embedding : embeddings) {
+                LostFoundItem item = embedding.getItem();
+                if (item != null) {
+                    registerItemWithMlService(item);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error registering all items with ML service: {}", e.getMessage(), e);
+        }
+    }
+
     private List<Map<String, Object>> findMatchesFromMlService(LostFoundItem item) {
         List<Map<String, Object>> matches = new ArrayList<>();
 
@@ -189,6 +237,11 @@ public class MatchingServiceImpl implements MatchingService {
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
             ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
+
+            if (response.getStatusCode() == HttpStatus.NOT_FOUND) {
+                registerAllItemsWithMlService();
+                response = restTemplate.postForEntity(url, request, String.class);
+            }
 
             if (response.getStatusCode() == HttpStatus.OK) {
                 JsonNode jsonResponse = objectMapper.readTree(response.getBody());
@@ -208,7 +261,31 @@ public class MatchingServiceImpl implements MatchingService {
                             matches.add(matchData);
                         }
                     }
+                } else if (jsonResponse.has("message") && jsonResponse.get("message").asText("").contains("not found")) {
+                    registerAllItemsWithMlService();
+                    ResponseEntity<String> retryResponse = restTemplate.postForEntity(url, request, String.class);
+                    if (retryResponse.getStatusCode() == HttpStatus.OK) {
+                        JsonNode retryJson = objectMapper.readTree(retryResponse.getBody());
+                        if (retryJson.get("success").asBoolean()) {
+                            JsonNode matchesNode = retryJson.get("matches");
+                            if (matchesNode != null && matchesNode.isArray()) {
+                                for (JsonNode matchNode : matchesNode) {
+                                    Map<String, Object> matchData = new HashMap<>();
+                                    matchData.put("lostItemId", matchNode.get("lostItemId").asText());
+                                    matchData.put("foundItemId", matchNode.get("foundItemId").asText());
+                                    matchData.put("confidenceScore", matchNode.get("confidenceScore").asDouble());
+                                    matchData.put("imageSimilarity", matchNode.get("imageSimilarity").asDouble());
+                                    matchData.put("textSimilarity", matchNode.get("textSimilarity").asDouble());
+                                    matchData.put("categoryMatch", matchNode.get("categoryMatch").asDouble());
+                                    matchData.put("matchLevel", matchNode.get("matchLevel").asText());
+                                    matches.add(matchData);
+                                }
+                            }
+                        }
+                    }
                 }
+            } else if (response.getStatusCode() != HttpStatus.OK) {
+                log.warn("ML service /matching/find returned status {} for item {}", response.getStatusCode(), item.getId());
             }
         } catch (Exception e) {
             log.error("Error finding matches from ML service: {}", e.getMessage(), e);

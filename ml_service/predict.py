@@ -197,16 +197,20 @@
 
 
 
-import tensorflow as tf
 import numpy as np
 import os
 import glob
+import tempfile
+import zipfile
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+
+import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 
 # ======================================================
 # CONFIG
 # ======================================================
-MODEL_PATH = "lost_and_found_classifier11.keras"
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "lost_and_found_classifier12.keras")
 IMG_SIZE = (224, 224)
 
 CONF_THRESHOLD = 0.65     # confidence threshold
@@ -215,11 +219,30 @@ MARGIN_THRESHOLD = 0.20   # margin between top-1 and top-2
 # ======================================================
 # LOAD MODEL (INFERENCE MODE)
 # ======================================================
-model = tf.keras.models.load_model(
-    MODEL_PATH  
-)
+model_load_path = MODEL_PATH
+packed_model_path = None
 
-with open("class_names1.txt") as f:
+if os.path.isdir(MODEL_PATH):
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".keras")
+    tmp.close()
+    packed_model_path = tmp.name
+    with zipfile.ZipFile(packed_model_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(MODEL_PATH):
+            for filename in files:
+                file_path = os.path.join(root, filename)
+                arcname = os.path.relpath(file_path, MODEL_PATH)
+                zf.write(file_path, arcname)
+    model_load_path = packed_model_path
+
+model = tf.keras.models.load_model(model_load_path)
+
+if packed_model_path is not None:
+    try:
+        os.unlink(packed_model_path)
+    except Exception:
+        pass
+
+with open(os.path.join(os.path.dirname(__file__), "class_names2.txt")) as f:
     class_names = [line.strip() for line in f]
 
 print("Model loaded successfully")

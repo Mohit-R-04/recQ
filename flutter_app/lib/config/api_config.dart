@@ -4,7 +4,7 @@ class ApiConfig {
   // URLs - Update deviceUrl with your computer's local IP
   static const String localhostUrl = 'http://localhost:8080';
   static const String emulatorUrl = 'http://10.0.2.2:8080';
-  static const String deviceUrl = 'http://192.168.68.103:8080';
+  static const String deviceUrl = 'http://192.168.68.105:8080';
 
   // TODO: Replace this with your deployed backend URL (from Render/Railway)
   static const String productionUrl = 'https://your-app-name.onrender.com';

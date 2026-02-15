@@ -16,9 +16,11 @@ class TFLiteClassifier {
   bool _isInitialized = false;
 
   // Model configuration
-  static const String _modelPath =
-      'assets/ml/lost_and_found_classifier1.tflite';
-  static const String _labelsPath = 'assets/ml/class_names.txt';
+  static const String _preferredModelPath =
+      'assets/ml/lost_and_found_classifier12.tflite';
+  static const String _preferredLabelsPath = 'assets/ml/class_names2.txt';
+  static const String _legacyModelPath = 'assets/ml/lost_and_found_classifier1.tflite';
+  static const String _legacyLabelsPath = 'assets/ml/class_names.txt';
   static const int _inputSize = 224;
   static const double _confThreshold = 0.65;
   static const double _marginThreshold = 0.20;
@@ -26,33 +28,69 @@ class TFLiteClassifier {
   // Category mapping from ML classes to backend enum
   static const Map<String, String> _mlToBackendCategory = {
     'backpack': 'ACCESSORIES',
+    'book': 'DOCUMENT',
     'bottle': 'OTHERS',
+    'camera': 'ELECTRONIC',
+    'earrings': 'JEWELLERY',
+    'footwear': 'FOOTWEAR',
+    'glasses': 'ACCESSORIES',
     'headphone': 'ELECTRONIC',
+    'headphones': 'ELECTRONIC',
     'laptop': 'ELECTRONIC',
     'mobile phone': 'ELECTRONIC',
+    'necklace': 'JEWELLERY',
+    'outerwear': 'CLOTHING',
     'wallet': 'ACCESSORIES',
     'watch': 'ACCESSORIES',
-    'other': 'OTHERS',
   };
 
   bool get isInitialized => _isInitialized;
   List<String> get classNames => _classNames;
+
+  String _normalizeLabel(String label) => label.trim().toLowerCase();
+
+  Future<bool> _tryInitialize(String modelPath, String labelsPath) async {
+    try {
+      final interpreter = await Interpreter.fromAsset(modelPath);
+      final labelsData = await rootBundle.loadString(labelsPath);
+      final classNames = labelsData
+          .split('\n')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+
+      final outputShape = interpreter.getOutputTensor(0).shape;
+      final outputClasses =
+          outputShape.isNotEmpty ? outputShape[outputShape.length - 1] : 0;
+
+      if (outputClasses != classNames.length) {
+        interpreter.close();
+        return false;
+      }
+
+      _interpreter?.close();
+      _interpreter = interpreter;
+      _classNames = classNames;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Initialize the TFLite model
   Future<bool> initialize() async {
     if (_isInitialized) return true;
 
     try {
-      // Load model
-      _interpreter = await Interpreter.fromAsset(_modelPath);
+      final preferredOk =
+          await _tryInitialize(_preferredModelPath, _preferredLabelsPath);
+      final legacyOk = preferredOk
+          ? false
+          : await _tryInitialize(_legacyModelPath, _legacyLabelsPath);
 
-      // Load class names
-      final labelsData = await rootBundle.loadString(_labelsPath);
-      _classNames = labelsData
-          .split('\n')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
+      if (!preferredOk && !legacyOk) {
+        return false;
+      }
 
       _isInitialized = true;
       print('TFLite classifier initialized with ${_classNames.length} classes');
@@ -119,7 +157,8 @@ class TFLiteClassifier {
       }
 
       // Map to backend category
-      final backendCategory = _mlToBackendCategory[predictedClass] ?? 'OTHERS';
+      final backendCategory =
+          _mlToBackendCategory[_normalizeLabel(predictedClass)] ?? 'OTHERS';
 
       return {
         'success': true,

@@ -26,7 +26,7 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
   final _reporterEmailController = TextEditingController();
   final _reporterPhoneController = TextEditingController();
 
-  String _type = 'LOST';
+  String _type = 'FOUND';
   String _category = 'OTHERS'; // Changed default to match backend
   DateTime _selectedDate = DateTime.now();
   File? _imageFile;
@@ -357,14 +357,14 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
               SegmentedButton<String>(
                 segments: const [
                   ButtonSegment(
-                    value: 'LOST',
-                    label: Text('Lost'),
-                    icon: Icon(Icons.search_off),
-                  ),
-                  ButtonSegment(
                     value: 'FOUND',
                     label: Text('Found'),
                     icon: Icon(Icons.check_circle),
+                  ),
+                  ButtonSegment(
+                    value: 'LOST',
+                    label: Text('Lost'),
+                    icon: Icon(Icons.search_off),
                   ),
                 ],
                 selected: {_type},
@@ -490,8 +490,8 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
                   hintText: 'e.g., Black iPhone 13',
                 ),
                 validator: (value) {
-                  if (value == null || value.length < 5) {
-                    return 'Title must be at least 5 characters';
+                  if (value == null || value.length < 2) {
+                    return 'Title must be at least 2 characters';
                   }
                   return null;
                 },
@@ -538,8 +538,8 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
                   prefixIcon: Icon(Icons.location_on),
                 ),
                 validator: (value) {
-                  if (value == null || value.length < 5) {
-                    return 'Location must be at least 5 characters';
+                  if (value == null || value.length < 2) {
+                    return 'Location must be at least 2 characters';
                   }
                   return null;
                 },

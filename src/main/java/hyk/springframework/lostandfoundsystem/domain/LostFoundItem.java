@@ -32,7 +32,7 @@ public class LostFoundItem extends BaseEntity {
     private Type type;
 
     @NotEmpty
-    @Size(min = 5, max = 150)
+    @Size(min = 2, max = 150)
     private String title;
 
     @NotNull
@@ -41,7 +41,7 @@ public class LostFoundItem extends BaseEntity {
     private LocalDate lostFoundDate;
 
     @NotEmpty
-    @Size(min = 5, max = 150)
+    @Size(min = 2, max = 150)
     private String lostFoundLocation;
 
     @Size(max = 255)

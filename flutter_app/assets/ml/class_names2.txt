@@ -1,0 +1,14 @@
+Backpack
+Book
+Bottle
+Camera
+Earrings
+Footwear
+Glasses
+Headphones
+Laptop
+Mobile phone
+Necklace
+Outerwear
+Wallet
+Watch

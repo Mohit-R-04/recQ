@@ -443,10 +443,9 @@ def _filter_transformer_questions(questions: List[str], category: str, title_key
         if any(tok in q_lower for tok in [" lost ", " found ", " near ", " around "]):
             continue
 
-        if hints and not any(h in q_lower for h in hints):
-            continue
-
-        if title_keywords and not any(tk in q_lower for tk in title_keywords[:6]):
+        has_hint = bool(hints and any(h in q_lower for h in hints))
+        has_title_kw = bool(title_keywords and any(tk in q_lower for tk in title_keywords[:6]))
+        if not (has_hint or has_title_kw):
             continue
 
         out.append(q_norm)
@@ -520,8 +519,6 @@ def generate_questions_transformer(
         context_parts.append(title)
     if description:
         context_parts.append(description)
-    if category:
-        context_parts.append(f"Category: {category}")
 
     if not any(p.strip() for p in context_parts):
         return []
@@ -702,13 +699,18 @@ def generate_questions(title: str, category: str, description: str = "",
         )
         transformer_filtered = filter_questions(
             transformer_candidates,
-            required_keywords=title_keywords[:6],
+            required_keywords=None,
         )
-        transformer_filtered = _filter_transformer_questions(
+        transformer_hint_filtered = _filter_transformer_questions(
             transformer_filtered,
             category=category,
             title_keywords=title_keywords,
         )
+        if transformer_hint_filtered:
+            transformer_filtered = transformer_hint_filtered
+        debug = os.getenv("QG_DEBUG", "").strip().lower()
+        if debug in {"1", "true", "yes", "on"} and transformer_candidates and not transformer_filtered:
+            print(f"[QG] transformer_candidates={len(transformer_candidates)} filtered=0 category={category} title='{title}'")
         for q in transformer_filtered:
             rewritten = _rewrite_transformer_question(q, category=category)
             add_question(rewritten or q, "transformer")

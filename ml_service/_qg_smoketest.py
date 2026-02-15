@@ -52,6 +52,14 @@ def main():
     ]
     print("filter_demo", filter_questions(leaked))
 
+    os.environ["QG_USE_TRANSFORMER"] = "true"
+    os.environ["QG_T5_MODEL"] = "valhalla/t5-small-qg-hl"
+    wallet = generate_questions(title="Wallet", category="ACCESSORIES", description="", num_questions=5)
+    print("wallet_types", [q["type"] for q in wallet])
+    wallet_raw = generate_questions_transformer(title="Wallet", category="ACCESSORIES", description="", num_candidates=5, num_beams=5)
+    print("wallet_raw", wallet_raw[:5])
+    print("wallet_raw_filtered", filter_questions(wallet_raw)[:5])
+
 
 if __name__ == "__main__":
     main()
