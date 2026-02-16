@@ -76,10 +76,16 @@ class _HomeScreenState extends State<HomeScreen> {
             false, // Prevent back button - user must logout to return to login
         child: Scaffold(
           appBar: AppBar(
-            title: const Text('Lost & Found'),
+            title: const Text(
+              'Lost & Found',
+              style: TextStyle(
+                color: Colors.white,
+              ),
+            ),
+            backgroundColor: const Color(0xFF6C47FF),
             leading: Builder(
               builder: (context) => IconButton(
-                icon: const Icon(Icons.menu),
+                icon: const Icon(Icons.menu, color: Colors.white),
                 onPressed: () => Scaffold.of(context).openDrawer(),
                 tooltip: 'Menu',
               ),
@@ -90,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.compare_arrows),
+                    color: Colors.white,
                     tooltip: 'Matches',
                     onPressed: () {
                       Navigator.push(
@@ -130,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.notifications),
+                    color: Colors.white,
                     tooltip: 'Notifications',
                     onPressed: () {
                       Navigator.push(

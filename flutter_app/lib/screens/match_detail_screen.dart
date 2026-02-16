@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../models/item_match.dart';
 import '../services/api_service.dart';
 import '../config/api_config.dart';
+import 'claim_item_screen.dart';
 
 class MatchDetailScreen extends StatefulWidget {
   final String matchId;
@@ -19,6 +20,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   ItemMatch? _match;
   bool _isLoading = true;
   bool _isProcessing = false;
+  bool _checkingClaim = false;
+  bool _hasClaimed = false;
 
   @override
   void initState() {
@@ -34,6 +37,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         _match = match;
         _isLoading = false;
       });
+
+      await _checkClaimStatus();
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
@@ -41,6 +46,60 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
           SnackBar(content: Text('Error loading match: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _checkClaimStatus() async {
+    final match = _match;
+    if (match == null) {
+      return;
+    }
+
+    if (!match.canClaim || match.foundItem?.id == null) {
+      setState(() {
+        _checkingClaim = false;
+        _hasClaimed = false;
+      });
+      return;
+    }
+
+    setState(() => _checkingClaim = true);
+    try {
+      final hasClaimed =
+          await _apiService.hasUserClaimedItem(match.foundItem!.id!);
+      if (mounted) {
+        setState(() {
+          _hasClaimed = hasClaimed;
+          _checkingClaim = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _checkingClaim = false);
+      }
+    }
+  }
+
+  Future<void> _onClaimPressed() async {
+    final match = _match;
+    final foundItem = match?.foundItem;
+    if (foundItem == null || foundItem.id == null) {
+      return;
+    }
+
+    final claimed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ClaimItemScreen(
+          itemId: foundItem.id!,
+          itemTitle: foundItem.title,
+          itemCategory: foundItem.category ?? 'Unknown',
+        ),
+      ),
+    );
+
+    if (claimed == true && mounted) {
+      await _checkClaimStatus();
     }
   }
 
@@ -209,6 +268,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                         _buildActionButtons(),
 
                       if (_match!.isConfirmed) _buildConfirmedBanner(),
+                      if (_match!.isConfirmed) _buildClaimSection(),
                     ],
                   ),
                 ),
@@ -481,48 +541,129 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   }
 
   Widget _buildActionButtons() {
+    final match = _match!;
+    final showConfirm = match.canConfirm;
+    final showDismiss = !match.isFoundItemOwner;
+
     return Column(
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _isProcessing ? null : _confirmMatch,
-            icon: _isProcessing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check_circle),
-            label: Text(_isProcessing ? 'Processing...' : 'Confirm Match'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+        if (showConfirm) ...[
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isProcessing ? null : _confirmMatch,
+              icon: _isProcessing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_circle),
+              label: Text(_isProcessing ? 'Processing...' : 'Confirm Match'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _isProcessing ? null : _dismissMatch,
-            icon: const Icon(Icons.close),
-            label: const Text('Not My Item'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red,
-              side: const BorderSide(color: Colors.red),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          const SizedBox(height: 12),
+        ],
+        if (showDismiss)
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _isProcessing ? null : _dismissMatch,
+              icon: const Icon(Icons.close),
+              label: const Text('Not My Item'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ),
-        ),
       ],
+    );
+  }
+
+  Widget _buildClaimSection() {
+    final match = _match!;
+    final foundItem = match.foundItem;
+
+    if (!match.canClaim || foundItem == null) {
+      return const SizedBox.shrink();
+    }
+
+    if (foundItem.isCollected) {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.teal[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.teal[200]!),
+        ),
+        child: Text(
+          'This item has been collected by an owner. Claims are closed.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.teal[800]),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: _checkingClaim
+            ? const Center(child: CircularProgressIndicator())
+            : _hasClaimed
+                ? Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.green[200]!),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle, color: Colors.green[700]),
+                        const SizedBox(width: 8),
+                        Text(
+                          'You have claimed this item',
+                          style: TextStyle(
+                            color: Colors.green[800],
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ElevatedButton.icon(
+                    onPressed: _onClaimPressed,
+                    icon: const Icon(Icons.back_hand),
+                    label: const Text('Claim This Item'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6C47FF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 3,
+                    ),
+                  ),
+      ),
     );
   }
 

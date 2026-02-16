@@ -7,6 +7,10 @@ class ItemMatch {
   final String matchLevel;
   final bool isConfirmed;
   final bool isDismissed;
+  final bool isLostItemOwner;
+  final bool isFoundItemOwner;
+  final bool canConfirm;
+  final bool canClaim;
   final String? createdAt;
   final String? confirmedAt;
   final MatchItem? lostItem;
@@ -21,6 +25,10 @@ class ItemMatch {
     required this.matchLevel,
     this.isConfirmed = false,
     this.isDismissed = false,
+    this.isLostItemOwner = false,
+    this.isFoundItemOwner = false,
+    this.canConfirm = false,
+    this.canClaim = false,
     this.createdAt,
     this.confirmedAt,
     this.lostItem,
@@ -37,6 +45,10 @@ class ItemMatch {
       matchLevel: json['matchLevel'] ?? 'LOW',
       isConfirmed: json['isConfirmed'] ?? false,
       isDismissed: json['isDismissed'] ?? false,
+      isLostItemOwner: json['isLostItemOwner'] ?? false,
+      isFoundItemOwner: json['isFoundItemOwner'] ?? false,
+      canConfirm: json['canConfirm'] ?? false,
+      canClaim: json['canClaim'] ?? false,
       createdAt: json['createdAt'],
       confirmedAt: json['confirmedAt'],
       lostItem: json['lostItem'] != null
@@ -58,6 +70,10 @@ class ItemMatch {
       'matchLevel': matchLevel,
       'isConfirmed': isConfirmed,
       'isDismissed': isDismissed,
+      'isLostItemOwner': isLostItemOwner,
+      'isFoundItemOwner': isFoundItemOwner,
+      'canConfirm': canConfirm,
+      'canClaim': canClaim,
       if (createdAt != null) 'createdAt': createdAt,
       if (confirmedAt != null) 'confirmedAt': confirmedAt,
     };
@@ -88,6 +104,7 @@ class MatchItem {
   final String? reporterName;
   final String? reporterEmail;
   final String? reporterPhoneNo;
+  final bool isCollected;
 
   MatchItem({
     this.id,
@@ -100,6 +117,7 @@ class MatchItem {
     this.reporterName,
     this.reporterEmail,
     this.reporterPhoneNo,
+    this.isCollected = false,
   });
 
   factory MatchItem.fromJson(Map<String, dynamic> json) {
@@ -114,6 +132,7 @@ class MatchItem {
       reporterName: json['reporterName'],
       reporterEmail: json['reporterEmail'],
       reporterPhoneNo: json['reporterPhoneNo'],
+      isCollected: json['isCollected'] ?? false,
     );
   }
 }

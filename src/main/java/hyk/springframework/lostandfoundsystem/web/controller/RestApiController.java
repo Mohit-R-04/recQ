@@ -1085,7 +1085,8 @@ public class RestApiController {
         if (isAdmin) {
             dto.put("description", item.getDescription());
             dto.put("descriptionAddedBy", item.getDescriptionAddedBy());
-            dto.put("descriptionAddedAt", item.getDescriptionAddedAt() != null ? item.getDescriptionAddedAt().toString() : null);
+            dto.put("descriptionAddedAt",
+                    item.getDescriptionAddedAt() != null ? item.getDescriptionAddedAt().toString() : null);
             dto.put("reporterName", item.getReporterName());
             dto.put("reporterEmail", item.getReporterEmail());
             dto.put("reporterPhoneNo", item.getReporterPhoneNo());
@@ -1115,6 +1116,39 @@ public class RestApiController {
         dto.put("confirmedAt", match.getConfirmedAt() != null ? match.getConfirmedAt().toString() : null);
 
         boolean isAdmin = LoginUserUtil.isAdmin();
+        User currentUser = null;
+        try {
+            currentUser = LoginUserUtil.getLoginUser();
+        } catch (Exception e) {
+            currentUser = null;
+        }
+
+        boolean isLostItemOwner = currentUser != null
+                && match.getLostItem() != null
+                && match.getLostItem().getUser() != null
+                && match.getLostItem().getUser().getId().equals(currentUser.getId());
+        boolean isFoundItemOwner = currentUser != null
+                && match.getFoundItem() != null
+                && match.getFoundItem().getUser() != null
+                && match.getFoundItem().getUser().getId().equals(currentUser.getId());
+
+        boolean canConfirm = isLostItemOwner
+                && Boolean.FALSE.equals(match.getIsConfirmed())
+                && Boolean.FALSE.equals(match.getIsDismissed());
+
+        boolean foundItemCollected = false;
+        if (match.getFoundItem() != null) {
+            Long collectedCount = claimRepository.countByItemAndStatus(match.getFoundItem(), ClaimStatus.COLLECTED);
+            foundItemCollected = collectedCount != null && collectedCount > 0;
+        }
+        boolean canClaim = isLostItemOwner
+                && Boolean.TRUE.equals(match.getIsConfirmed())
+                && !foundItemCollected;
+
+        dto.put("isLostItemOwner", isLostItemOwner);
+        dto.put("isFoundItemOwner", isFoundItemOwner);
+        dto.put("canConfirm", canConfirm);
+        dto.put("canClaim", canClaim);
 
         if (match.getLostItem() != null) {
             dto.put("lostItem", itemToDto(match.getLostItem(), isAdmin));

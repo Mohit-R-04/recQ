@@ -56,7 +56,12 @@ class _MatchesScreenState extends State<MatchesScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Matches'),
+        title: const Text(
+          'Matches',
+          style: TextStyle(color: Colors.white),
+        ),
+        // backgroundColor:  const Color(0xFF6C47FF),
+        iconTheme: const IconThemeData(color: Colors.white),
         flexibleSpace: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(
@@ -74,7 +79,7 @@ class _MatchesScreenState extends State<MatchesScreen>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('Pending'),
+                  const Text('Pending', style: TextStyle(color: Colors.white)),
                   if (_pendingMatches.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(left: 8),
@@ -86,13 +91,19 @@ class _MatchesScreenState extends State<MatchesScreen>
                       ),
                       child: Text(
                         '${_pendingMatches.length}',
-                        style: const TextStyle(fontSize: 12),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.white),
                       ),
                     ),
                 ],
               ),
             ),
-            const Tab(text: 'All Matches'),
+            const Tab(
+              child: Text(
+                'All Matches',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
           ],
         ),
       ),

@@ -9,11 +9,15 @@ import hyk.springframework.lostandfoundsystem.repositories.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -100,6 +104,9 @@ public class MatchingServiceImpl implements MatchingService {
             body.add("category", item.getCategory().name());
             body.add("userId", item.getUser() != null ? item.getUser().getId().toString() : "");
 
+            Optional<FileSystemResource> imageResource = resolveImageResource(item.getImageUrl());
+            imageResource.ifPresent(resource -> body.add("image", resource));
+
             HttpEntity<org.springframework.util.LinkedMultiValueMap<String, Object>> request = new HttpEntity<>(body,
                     headers);
 
@@ -127,6 +134,30 @@ public class MatchingServiceImpl implements MatchingService {
         } catch (Exception e) {
             log.error("Error generating embeddings: {}", e.getMessage(), e);
         }
+    }
+
+    private Optional<FileSystemResource> resolveImageResource(String imageUrl) {
+        if (imageUrl == null || imageUrl.trim().isEmpty()) {
+            return Optional.empty();
+        }
+
+        String normalized = imageUrl.trim();
+        if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+            log.warn("Image URL is remote; skipping embedding upload: {}", normalized);
+            return Optional.empty();
+        }
+
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+
+        Path imagePath = Paths.get("src/main/resources/static", normalized);
+        if (!Files.exists(imagePath)) {
+            log.warn("Image file not found for embeddings: {}", imagePath.toAbsolutePath());
+            return Optional.empty();
+        }
+
+        return Optional.of(new FileSystemResource(imagePath.toFile()));
     }
 
     private void registerItemWithMlService(LostFoundItem item) {
@@ -292,11 +323,8 @@ public class MatchingServiceImpl implements MatchingService {
         String username = user.getUsername();
         boolean isLostItemOwner = match.getLostItemUser() != null &&
                 match.getLostItemUser().getUsername().equals(username);
-        boolean isFoundItemOwner = match.getFoundItemUser() != null &&
-                match.getFoundItemUser().getUsername().equals(username);
-
-        if (!isLostItemOwner && !isFoundItemOwner) {
-            throw new RuntimeException("User not authorized to confirm this match");
+        if (!isLostItemOwner) {
+            throw new RuntimeException("Only the lost item owner can confirm this match");
         }
 
         match.setIsConfirmed(true);
@@ -304,9 +332,7 @@ public class MatchingServiceImpl implements MatchingService {
         ItemMatch savedMatch = matchRepository.save(match);
 
         // Notify the other user
-        User otherUser = isLostItemOwner
-                ? match.getFoundItemUser()
-                : match.getLostItemUser();
+        User otherUser = match.getFoundItemUser();
         if (otherUser != null) {
             notificationService.createMatchConfirmedNotification(otherUser, savedMatch);
         }
