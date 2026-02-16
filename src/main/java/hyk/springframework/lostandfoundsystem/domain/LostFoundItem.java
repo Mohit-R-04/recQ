@@ -14,6 +14,7 @@ import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.PastOrPresent;
 import javax.validation.constraints.Size;
+import java.sql.Timestamp;
 import java.time.LocalDate;
 
 /**
@@ -31,7 +32,7 @@ public class LostFoundItem extends BaseEntity {
     private Type type;
 
     @NotEmpty
-    @Size(min = 5, max = 150)
+    @Size(min = 2, max = 150)
     private String title;
 
     @NotNull
@@ -40,11 +41,15 @@ public class LostFoundItem extends BaseEntity {
     private LocalDate lostFoundDate;
 
     @NotEmpty
-    @Size(min = 5, max = 150)
+    @Size(min = 2, max = 150)
     private String lostFoundLocation;
 
     @Size(max = 255)
     private String description;
+
+    private String descriptionAddedBy;
+
+    private Timestamp descriptionAddedAt;
 
     @NotEmpty
     @Size(min = 5, max = 50)

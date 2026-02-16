@@ -7,17 +7,19 @@ import '../providers/app_provider.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String email;
-  
+
   const OtpVerificationScreen({super.key, required this.email});
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
 }
 
-class _OtpVerificationScreenState extends State<OtpVerificationScreen> with SingleTickerProviderStateMixin {
-  final List<TextEditingController> _otpControllers = List.generate(6, (_) => TextEditingController());
+class _OtpVerificationScreenState extends State<OtpVerificationScreen>
+    with SingleTickerProviderStateMixin {
+  final List<TextEditingController> _otpControllers =
+      List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
-  
+
   bool _isVerifying = false;
   bool _canResend = false;
   int _resendSeconds = 60;
@@ -57,7 +59,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
   void _startResendTimer() {
     _canResend = false;
     _resendSeconds = 60;
-    
+
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
@@ -73,7 +75,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
 
   Future<void> _verifyOtp() async {
     final otp = _otpControllers.map((c) => c.text).join();
-    
+
     if (otp.length != 6) {
       setState(() {
         _errorMessage = 'Please enter complete OTP';
@@ -95,9 +97,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
         // Update AppProvider with user data
         final provider = Provider.of<AppProvider>(context, listen: false);
         await provider.loadUserFromPreferences();
-        
+
         Navigator.of(context).pushReplacementNamed('/home');
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Login successful!'),
@@ -129,7 +131,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
 
     try {
       final response = await ApiService().sendOtp(widget.email);
-      
+
       if (!mounted) return;
 
       if (response['success'] == true) {
@@ -202,7 +204,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                           ),
                         ),
                         const SizedBox(height: 8),
-                        
+
                         // Icon
                         Center(
                           child: Container(
@@ -219,7 +221,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                           ),
                         ),
                         const SizedBox(height: 24),
-                        
+
                         // Title
                         const Text(
                           'Verify OTP',
@@ -231,7 +233,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 12),
-                        
+
                         // Subtitle
                         Text(
                           'Enter the 6-digit code sent to\n${widget.email}',
@@ -242,7 +244,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 32),
-                        
+
                         // Error Message
                         if (_errorMessage != null)
                           Container(
@@ -255,7 +257,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.error_outline, color: Colors.red[700], size: 20),
+                                Icon(Icons.error_outline,
+                                    color: Colors.red[700], size: 20),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
@@ -269,64 +272,77 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                               ],
                             ),
                           ),
-                        
+
                         // OTP Input Fields
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: List.generate(6, (index) {
-                            return SizedBox(
-                              width: 50,
-                              child: TextField(
-                                controller: _otpControllers[index],
-                                focusNode: _focusNodes[index],
-                                textAlign: TextAlign.center,
-                                keyboardType: TextInputType.number,
-                                maxLength: 1,
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                decoration: InputDecoration(
-                                  counterText: '',
-                                  filled: true,
-                                  fillColor: Colors.grey[100],
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: Colors.grey[300]!),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(color: Colors.grey[300]!),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(
-                                      color: Color(0xFF6C47FF),
-                                      width: 2,
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            const spacing = 8.0;
+                            final totalSpacing = spacing * 5;
+                            final rawWidth =
+                                (constraints.maxWidth - totalSpacing) / 6;
+                            final fieldWidth =
+                                rawWidth.clamp(40.0, 56.0).toDouble();
+
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: List.generate(6, (index) {
+                                return SizedBox(
+                                  width: fieldWidth,
+                                  child: TextField(
+                                    controller: _otpControllers[index],
+                                    focusNode: _focusNodes[index],
+                                    textAlign: TextAlign.center,
+                                    keyboardType: TextInputType.number,
+                                    maxLength: 1,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
                                     ),
+                                    decoration: InputDecoration(
+                                      counterText: '',
+                                      filled: true,
+                                      fillColor: Colors.grey[100],
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[300]!),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[300]!),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        borderSide: const BorderSide(
+                                          color: Color(0xFF6C47FF),
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                    onChanged: (value) {
+                                      if (value.isNotEmpty && index < 5) {
+                                        _focusNodes[index + 1].requestFocus();
+                                      } else if (value.isEmpty && index > 0) {
+                                        _focusNodes[index - 1].requestFocus();
+                                      }
+
+                                      // Auto-verify when all 6 digits are entered
+                                      if (index == 5 && value.isNotEmpty) {
+                                        _verifyOtp();
+                                      }
+                                    },
                                   ),
-                                ),
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.digitsOnly,
-                                ],
-                                onChanged: (value) {
-                                  if (value.isNotEmpty && index < 5) {
-                                    _focusNodes[index + 1].requestFocus();
-                                  } else if (value.isEmpty && index > 0) {
-                                    _focusNodes[index - 1].requestFocus();
-                                  }
-                                  
-                                  // Auto-verify when all 6 digits are entered
-                                  if (index == 5 && value.isNotEmpty) {
-                                    _verifyOtp();
-                                  }
-                                },
-                              ),
+                                );
+                              }),
                             );
-                          }),
+                          },
                         ),
                         const SizedBox(height: 32),
-                        
+
                         // Verify Button
                         ElevatedButton(
                           onPressed: _isVerifying ? null : _verifyOtp,
@@ -336,7 +352,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                                   width: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white),
                                   ),
                                 )
                               : const Text(
@@ -348,7 +365,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> with Sing
                                 ),
                         ),
                         const SizedBox(height: 16),
-                        
+
                         // Resend OTP
                         TextButton(
                           onPressed: _canResend ? _resendOtp : null,

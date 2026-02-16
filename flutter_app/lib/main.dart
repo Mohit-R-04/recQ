@@ -87,6 +87,23 @@ class MyApp extends StatelessWidget {
           '/profile': (context) => const ProfileScreen(),
           '/create-item': (context) => const CreateItemScreen(),
         },
+        onGenerateRoute: (settings) {
+          if (settings.name == '/item-detail') {
+            final itemId = settings.arguments as String?;
+            if (itemId == null || itemId.isEmpty) {
+              return MaterialPageRoute(
+                builder: (_) => const HomeScreen(),
+                settings: settings,
+              );
+            }
+
+            return MaterialPageRoute(
+              builder: (_) => ItemDetailScreen(itemId: itemId),
+              settings: settings,
+            );
+          }
+          return null;
+        },
       ),
     );
   }

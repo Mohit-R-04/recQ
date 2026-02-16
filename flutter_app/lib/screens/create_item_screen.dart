@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../providers/app_provider.dart';
 import '../models/lost_found_item.dart';
+import '../services/api_service.dart';
+import 'matches_screen.dart';
 
 class CreateItemScreen extends StatefulWidget {
   const CreateItemScreen({super.key});
@@ -24,7 +26,7 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
   final _reporterEmailController = TextEditingController();
   final _reporterPhoneController = TextEditingController();
 
-  String _type = 'LOST';
+  String _type = 'FOUND';
   String _category = 'OTHERS'; // Changed default to match backend
   DateTime _selectedDate = DateTime.now();
   File? _imageFile;
@@ -71,9 +73,76 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
   }
 
   Future<void> _pickImage() async {
+    _showImageSourceDialog();
+  }
+
+  void _showImageSourceDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Select Image Source',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 20),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.camera_alt, color: Colors.blue),
+                  ),
+                  title: const Text('Take Photo'),
+                  subtitle: const Text('Use your camera to capture an image'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _getImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.photo_library, color: Colors.green),
+                  ),
+                  title: const Text('Choose from Gallery'),
+                  subtitle: const Text('Select an existing image'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _getImage(ImageSource.gallery);
+                  },
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _getImage(ImageSource source) async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
+      source: source,
       maxWidth: 1920,
       maxHeight: 1080,
       imageQuality: 85,
@@ -126,6 +195,14 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
             _categories.contains(suggestedCategory)) {
           _category = suggestedCategory;
         }
+
+        // Auto-fill title with predicted class (always update on new image)
+        if (_predictedClass != null && _predictedClass != 'Other') {
+          // Capitalize first letter of predicted class
+          _titleController.text =
+              _predictedClass!.substring(0, 1).toUpperCase() +
+                  _predictedClass!.substring(1);
+        }
       }
     });
 
@@ -165,6 +242,7 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
   Future<void> _submitForm() async {
     if (_formKey.currentState!.validate()) {
       final provider = Provider.of<AppProvider>(context, listen: false);
+      final apiService = ApiService();
 
       final item = LostFoundItem(
         type: _type,
@@ -182,22 +260,74 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
             : _collectionLocationController.text,
       );
 
-      final success = await provider.createItem(item);
+      final result = await provider.createItem(item);
 
       if (!mounted) return;
 
-      if (success) {
-        Navigator.of(context).pop();
+      if (result['success'] == true) {
+        final itemId = result['itemId'];
+
+        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Item reported successfully'),
+            content:
+                Text('Item reported successfully! Searching for matches...'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
+
+        // Trigger matching if we have an item ID
+        if (itemId != null) {
+          final matchResult = await apiService.findMatchesForItem(itemId);
+
+          if (!mounted) return;
+
+          if (matchResult['success'] == true && matchResult['matchCount'] > 0) {
+            // Show dialog about matches found
+            final goToMatches = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.compare_arrows, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text('Matches Found!'),
+                  ],
+                ),
+                content: Text(
+                  'We found ${matchResult['matchCount']} potential match${matchResult['matchCount'] > 1 ? 'es' : ''} for your ${_type.toLowerCase()} item!\n\nWould you like to view them now?',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Later'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                    ),
+                    child: const Text('View Matches'),
+                  ),
+                ],
+              ),
+            );
+
+            if (goToMatches == true && mounted) {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (context) => const MatchesScreen()),
+              );
+              return;
+            }
+          }
+        }
+
+        Navigator.of(context).pop();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(provider.error ?? 'Failed to create item'),
+            content: Text(result['message'] ?? 'Failed to create item'),
             backgroundColor: Colors.red,
           ),
         );
@@ -227,14 +357,14 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
               SegmentedButton<String>(
                 segments: const [
                   ButtonSegment(
-                    value: 'LOST',
-                    label: Text('Lost'),
-                    icon: Icon(Icons.search_off),
-                  ),
-                  ButtonSegment(
                     value: 'FOUND',
                     label: Text('Found'),
                     icon: Icon(Icons.check_circle),
+                  ),
+                  ButtonSegment(
+                    value: 'LOST',
+                    label: Text('Lost'),
+                    icon: Icon(Icons.search_off),
                   ),
                 ],
                 selected: {_type},
@@ -299,11 +429,11 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
                           : Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.add_photo_alternate,
+                                Icon(Icons.add_a_photo,
                                     size: 50, color: Colors.grey[600]),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Tap to add photo',
+                                  'Tap to take or select photo',
                                   style: TextStyle(color: Colors.grey[600]),
                                 ),
                               ],
@@ -360,8 +490,8 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
                   hintText: 'e.g., Black iPhone 13',
                 ),
                 validator: (value) {
-                  if (value == null || value.length < 5) {
-                    return 'Title must be at least 5 characters';
+                  if (value == null || value.length < 2) {
+                    return 'Title must be at least 2 characters';
                   }
                   return null;
                 },
@@ -408,8 +538,8 @@ class _CreateItemScreenState extends State<CreateItemScreen> {
                   prefixIcon: Icon(Icons.location_on),
                 ),
                 validator: (value) {
-                  if (value == null || value.length < 5) {
-                    return 'Location must be at least 5 characters';
+                  if (value == null || value.length < 2) {
+                    return 'Location must be at least 2 characters';
                   }
                   return null;
                 },

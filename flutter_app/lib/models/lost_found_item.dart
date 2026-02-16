@@ -15,6 +15,7 @@ class LostFoundItem {
   final String? collectionLocation;
   final String? createdBy;
   final String? modifiedBy;
+  final bool isCollected;
   final List<Comment>? comments;
 
   LostFoundItem({
@@ -34,6 +35,7 @@ class LostFoundItem {
     this.collectionLocation,
     this.createdBy,
     this.modifiedBy,
+    this.isCollected = false,
     this.comments,
   });
 
@@ -55,6 +57,7 @@ class LostFoundItem {
       collectionLocation: json['collectionLocation'],
       createdBy: json['createdBy'],
       modifiedBy: json['modifiedBy'],
+      isCollected: json['isCollected'] == true,
       comments: json['comments'] != null
           ? (json['comments'] as List).map((c) => Comment.fromJson(c)).toList()
           : null,

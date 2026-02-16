@@ -4,7 +4,7 @@ class ApiConfig {
   // URLs - Update deviceUrl with your computer's local IP
   static const String localhostUrl = 'http://localhost:8080';
   static const String emulatorUrl = 'http://10.0.2.2:8080';
-  static const String deviceUrl = 'http://192.168.68.101:8080';
+  static const String deviceUrl = 'http://10.234.226.239:8080';
 
   // TODO: Replace this with your deployed backend URL (from Render/Railway)
   static const String productionUrl = 'https://recq.onrender.com';
@@ -42,8 +42,29 @@ class ApiConfig {
   static String get itemsEndpoint => '$apiUrl/items';
   static String get uploadEndpoint => '$apiUrl/items/upload';
 
+  // Claim endpoints
+  static String get claimsEndpoint => '$apiUrl/claims';
+  static String get myClaimsEndpoint => '$apiUrl/claims/my';
+  static String get adminAllClaimsEndpoint => '$apiUrl/claims/admin/all';
+  static String claimsByItemEndpoint(String itemId) =>
+      '$apiUrl/claims/item/$itemId';
+  static String reviewClaimEndpoint(String claimId) =>
+      '$apiUrl/claims/$claimId/review';
+  static String checkClaimEndpoint(String itemId) =>
+      '$apiUrl/claims/check/$itemId';
+  static String claimByIdEndpoint(String claimId) => '$apiUrl/claims/$claimId';
+  static String claimQuestionsEndpoint(String itemId, {int numQuestions = 5}) =>
+      '$apiUrl/claims/questions/$itemId?numQuestions=$numQuestions';
+
+  // ML Service URL (for question generation)
+  static const String mlServiceUrl = 'http://192.168.68.103:5000';
+  static String get generateQuestionsEndpoint =>
+      '$mlServiceUrl/generate-questions';
+
   // Helper methods
   static String itemByIdEndpoint(String itemId) => '$itemsEndpoint/$itemId';
+  static String itemDescriptionEndpoint(String itemId) =>
+      '$itemsEndpoint/$itemId/description';
 
   static String itemsByUserEndpoint(int userId) =>
       '$itemsEndpoint/user/$userId';

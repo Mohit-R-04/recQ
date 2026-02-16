@@ -1,14 +1,24 @@
 package hyk.springframework.lostandfoundsystem.web.controller;
 
+import hyk.springframework.lostandfoundsystem.domain.Claim;
 import hyk.springframework.lostandfoundsystem.domain.LostFoundItem;
 import hyk.springframework.lostandfoundsystem.domain.security.Role;
 import hyk.springframework.lostandfoundsystem.domain.security.User;
+import hyk.springframework.lostandfoundsystem.enums.ClaimStatus;
+import hyk.springframework.lostandfoundsystem.enums.Type;
+import hyk.springframework.lostandfoundsystem.repositories.ClaimRepository;
+import hyk.springframework.lostandfoundsystem.services.ClaimService;
 import hyk.springframework.lostandfoundsystem.services.LostFoundItemService;
 import hyk.springframework.lostandfoundsystem.services.UserService;
 import hyk.springframework.lostandfoundsystem.util.LoginUserUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -18,11 +28,17 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.client.RestTemplate;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+import javax.servlet.http.Cookie;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Timestamp;
 import java.util.*;
 
 /**
@@ -37,9 +53,14 @@ public class RestApiController {
 
     private final LostFoundItemService lostFoundItemService;
     private final UserService userService;
+    private final ClaimRepository claimRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final hyk.springframework.lostandfoundsystem.services.OtpService otpService;
+    private final RestTemplate restTemplate;
+
+    @Value("${ml.service.url:http://localhost:5000}")
+    private String mlServiceUrl;
 
     // ============ Authentication APIs ============
 
@@ -177,7 +198,8 @@ public class RestApiController {
     }
 
     @PostMapping("/auth/verify-otp")
-    public ResponseEntity<?> verifyOtpAndLogin(@RequestBody Map<String, String> request) {
+    public ResponseEntity<?> verifyOtpAndLogin(@RequestBody Map<String, String> request,
+            HttpServletRequest httpRequest, HttpServletResponse httpResponse) {
         try {
             String email = request.get("email");
             String otp = request.get("otp");
@@ -205,6 +227,11 @@ public class RestApiController {
             Authentication authentication = new UsernamePasswordAuthenticationToken(
                     user.getUsername(), null, user.getAuthorities());
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            HttpSession session = httpRequest.getSession(true);
+            Cookie sessionCookie = new Cookie("JSESSIONID", session.getId());
+            sessionCookie.setPath("/");
+            sessionCookie.setHttpOnly(true);
+            httpResponse.addCookie(sessionCookie);
 
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
@@ -281,20 +308,31 @@ public class RestApiController {
     // ============ Lost/Found Item APIs ============
 
     @GetMapping("/items")
-    public ResponseEntity<List<LostFoundItem>> getAllItems() {
-        return ResponseEntity.ok(lostFoundItemService.findAllItems());
+    public ResponseEntity<?> getAllItems() {
+        boolean isAdmin = LoginUserUtil.isAdmin();
+        List<LostFoundItem> items = lostFoundItemService.findAllItems();
+        List<Map<String, Object>> itemDtos = items.stream()
+                .map(item -> itemToDto(item, isAdmin))
+                .collect(java.util.stream.Collectors.toList());
+        return ResponseEntity.ok(itemDtos);
     }
 
     @GetMapping("/items/user/{userId}")
-    public ResponseEntity<List<LostFoundItem>> getItemsByUserId(@PathVariable Integer userId) {
-        return ResponseEntity.ok(lostFoundItemService.findAllItemsByUserId(userId));
+    public ResponseEntity<?> getItemsByUserId(@PathVariable Integer userId) {
+        boolean isAdmin = LoginUserUtil.isAdmin();
+        List<LostFoundItem> items = lostFoundItemService.findAllItemsByUserId(userId);
+        List<Map<String, Object>> itemDtos = items.stream()
+                .map(item -> itemToDto(item, isAdmin))
+                .collect(java.util.stream.Collectors.toList());
+        return ResponseEntity.ok(itemDtos);
     }
 
     @GetMapping("/items/{itemId}")
     public ResponseEntity<?> getItemById(@PathVariable UUID itemId) {
         try {
             LostFoundItem item = lostFoundItemService.findItemById(itemId);
-            return ResponseEntity.ok(item);
+            boolean isAdmin = LoginUserUtil.isAdmin();
+            return ResponseEntity.ok(itemToDto(item, isAdmin));
         } catch (Exception e) {
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
@@ -417,6 +455,52 @@ public class RestApiController {
         }
     }
 
+    @PutMapping("/items/{itemId}/description")
+    public ResponseEntity<?> updateItemDescription(@PathVariable UUID itemId, @RequestBody Map<String, String> body) {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            String description = body.get("description");
+            if (description == null || description.trim().isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description is required"));
+            }
+            if (description.length() > 255) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description must be 255 characters or less"));
+            }
+
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+            if (item.getType() != Type.FOUND) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description can only be added for FOUND items"));
+            }
+            if (item.getDescription() != null && !item.getDescription().isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "Description is already set for this item"));
+            }
+
+            item.setDescription(description.trim());
+            item.setDescriptionAddedBy(LoginUserUtil.getLoginUser().getUsername());
+            item.setDescriptionAddedAt(new Timestamp(System.currentTimeMillis()));
+            item.setModifiedBy(LoginUserUtil.getLoginUser().getUsername());
+            LostFoundItem savedItem = lostFoundItemService.saveItem(item);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("item", itemToDto(savedItem, true));
+            response.put("message", "Description added successfully");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to update item description", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to update description: " + e.getMessage()));
+        }
+    }
+
     @DeleteMapping("/items/{itemId}")
     public ResponseEntity<?> deleteItem(@PathVariable UUID itemId) {
         try {
@@ -438,7 +522,7 @@ public class RestApiController {
             log.error("Failed to delete item", e);
             Map<String, Object> response = new HashMap<>();
             response.put("success", false);
-            response.put("message", "Failed to delete item: " + e.getMessage());
+            response.put("message", "Failed to delete item");
             return ResponseEntity.badRequest().body(response);
         }
     }
@@ -464,7 +548,684 @@ public class RestApiController {
         }
     }
 
+    // ============ Matching APIs ============
+
+    @Autowired
+    private hyk.springframework.lostandfoundsystem.services.MatchingService matchingService;
+
+    @Autowired
+    private hyk.springframework.lostandfoundsystem.services.NotificationService notificationService;
+
+    @PostMapping("/items/{itemId}/find-matches")
+    public ResponseEntity<?> findMatchesForItem(@PathVariable UUID itemId) {
+        try {
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+            List<hyk.springframework.lostandfoundsystem.domain.ItemMatch> matches = matchingService
+                    .processNewItem(item);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("matchCount", matches.size());
+            response.put("matches",
+                    matches.stream().map(this::matchToDto).collect(java.util.stream.Collectors.toList()));
+            response.put("message",
+                    matches.size() > 0 ? "Found " + matches.size() + " potential matches!" : "No matches found yet");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to find matches", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to find matches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches")
+    public ResponseEntity<?> getMatchesForCurrentUser() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.ItemMatch> matches = matchingService
+                    .getPendingMatchesForUser(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("matchCount", matches.size());
+            response.put("matches",
+                    matches.stream().map(this::matchToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get matches", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to get matches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches/all")
+    public ResponseEntity<?> getAllMatchesForCurrentUser() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.ItemMatch> matches = matchingService
+                    .getAllMatchesForUser(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("matchCount", matches.size());
+            response.put("matches",
+                    matches.stream().map(this::matchToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get all matches", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to get matches: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches/{matchId}")
+    public ResponseEntity<?> getMatchById(@PathVariable UUID matchId) {
+        try {
+            hyk.springframework.lostandfoundsystem.domain.ItemMatch match = matchingService.getMatchById(matchId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("match", matchToDto(match));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get match", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Match not found");
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/matches/{matchId}/confirm")
+    public ResponseEntity<?> confirmMatch(@PathVariable UUID matchId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            hyk.springframework.lostandfoundsystem.domain.ItemMatch match = matchingService.confirmMatch(matchId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("match", matchToDto(match));
+            response.put("message", "Match confirmed! You can now contact the other party.");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to confirm match", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to confirm match: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @PostMapping("/matches/{matchId}/dismiss")
+    public ResponseEntity<?> dismissMatch(@PathVariable UUID matchId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            hyk.springframework.lostandfoundsystem.domain.ItemMatch match = matchingService.dismissMatch(matchId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Match dismissed");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to dismiss match", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to dismiss match: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/matches/count")
+    public ResponseEntity<?> getMatchCount() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            Long count = matchingService.countPendingMatches(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("count", count);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", true, "count", 0));
+        }
+    }
+
+    // ============ Notification APIs ============
+
+    @GetMapping("/notifications")
+    public ResponseEntity<?> getNotifications() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.Notification> notifications = notificationService
+                    .getNotificationsForUser(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("notifications", notifications.stream()
+                    .map(this::notificationToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get notifications", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to get notifications: " + e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @GetMapping("/notifications/unread")
+    public ResponseEntity<?> getUnreadNotifications() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            List<hyk.springframework.lostandfoundsystem.domain.Notification> notifications = notificationService
+                    .getUnreadNotifications(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("count", notifications.size());
+            response.put("notifications", notifications.stream()
+                    .map(this::notificationToDto).collect(java.util.stream.Collectors.toList()));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get unread notifications", e);
+            return ResponseEntity.ok(Map.of("success", true, "count", 0, "notifications", List.of()));
+        }
+    }
+
+    @GetMapping("/notifications/count")
+    public ResponseEntity<?> getNotificationCount() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            Long count = notificationService.countUnreadNotifications(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("count", count);
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", true, "count", 0));
+        }
+    }
+
+    @PostMapping("/notifications/{notificationId}/read")
+    public ResponseEntity<?> markNotificationAsRead(@PathVariable UUID notificationId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            hyk.springframework.lostandfoundsystem.domain.Notification notification = notificationService
+                    .markAsRead(notificationId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("notification", notificationToDto(notification));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to mark notification as read", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to mark notification as read");
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @PostMapping("/notifications/read-all")
+    public ResponseEntity<?> markAllNotificationsAsRead() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            notificationService.markAllAsRead(user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "All notifications marked as read");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to mark all notifications as read", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to mark notifications as read");
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    @DeleteMapping("/notifications/{notificationId}")
+    public ResponseEntity<?> deleteNotification(@PathVariable UUID notificationId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            notificationService.deleteNotification(notificationId, user);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Notification deleted");
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to delete notification", e);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("message", "Failed to delete notification");
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    // ============ Claim APIs ============
+
+    @Autowired
+    private ClaimService claimService;
+
+    @GetMapping("/claims/questions/{itemId}")
+    public ResponseEntity<?> generateClaimQuestions(@PathVariable UUID itemId,
+            @RequestParam(defaultValue = "5") int numQuestions) {
+        try {
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("title", item.getTitle());
+            body.put("category", item.getCategory() != null ? item.getCategory().name() : "OTHERS");
+            body.put("description", item.getDescription() != null ? item.getDescription() : "");
+            body.put("numQuestions", numQuestions);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+            ResponseEntity<Map> response = restTemplate.postForEntity(
+                    mlServiceUrl + "/generate-questions", request, Map.class);
+
+            if (response.getStatusCode() == HttpStatus.OK
+                    && response.getBody() != null
+                    && Boolean.TRUE.equals(response.getBody().get("success"))) {
+                return ResponseEntity.ok(response.getBody());
+            }
+
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("success", false, "message", "Failed to generate questions"));
+        } catch (Exception e) {
+            log.error("Failed to generate claim questions", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to generate questions"));
+        }
+    }
+
+    @PostMapping("/claims")
+    public ResponseEntity<?> submitClaim(@RequestBody Map<String, Object> claimData) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            User claimant = userService.findByUsername(user.getUsername());
+            if (claimant == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("success", false, "message", "User not found"));
+            }
+
+            String itemId = (String) claimData.get("itemId");
+            String questionsAndAnswers = (String) claimData.get("questionsAndAnswers");
+
+            LostFoundItem item = lostFoundItemService.findItemById(UUID.fromString(itemId));
+
+            Claim claim = claimService.createClaim(item, claimant, questionsAndAnswers);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claim", claimToDto(claim));
+            String message = "Claim submitted successfully. Admin will review your answers.";
+            if (claim.getStatus() == ClaimStatus.REJECTED) {
+                message = "This item has already been given to an owner. Your claim has been recorded as rejected.";
+            }
+            response.put("message", message);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            log.error("Failed to submit claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Failed to submit claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to submit claim: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/claims/my")
+    public ResponseEntity<?> getMyClaims() {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            User claimant = userService.findByUsername(user.getUsername());
+            List<Claim> claims = claimService.getClaimsByClaimant(claimant);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claims", claims.stream().map(this::claimToDto)
+                    .collect(java.util.stream.Collectors.toList()));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get claims", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to get claims"));
+        }
+    }
+
+    @GetMapping("/claims/item/{itemId}")
+    public ResponseEntity<?> getClaimsForItem(@PathVariable UUID itemId) {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            List<Claim> claims = claimService.getClaimsByItem(itemId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claims", claims.stream().map(this::claimToDto)
+                    .collect(java.util.stream.Collectors.toList()));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get claims for item", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to get claims"));
+        }
+    }
+
+    @GetMapping("/claims/admin/all")
+    public ResponseEntity<?> getAllClaimsAdmin() {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            List<Claim> claims = claimService.getAllClaims();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claims", claims.stream().map(this::claimToDto)
+                    .collect(java.util.stream.Collectors.toList()));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get all claims", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to get claims"));
+        }
+    }
+
+    @GetMapping("/claims/{claimId}")
+    public ResponseEntity<?> getClaimById(@PathVariable UUID claimId) {
+        try {
+            Claim claim = claimService.getClaimById(claimId);
+
+            if (!LoginUserUtil.isAdmin()) {
+                User currentUser = LoginUserUtil.getLoginUser();
+                if (claim.getClaimant() == null
+                        || currentUser == null
+                        || !claim.getClaimant().getId().equals(currentUser.getId())) {
+                    return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                            .body(Map.of("success", false, "message", "Access denied"));
+                }
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claim", claimToDto(claim));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to get claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Claim not found"));
+        }
+    }
+
+    @PostMapping("/claims/{claimId}/review")
+    public ResponseEntity<?> reviewClaim(@PathVariable UUID claimId,
+            @RequestBody Map<String, String> reviewData) {
+        try {
+            if (!LoginUserUtil.isAdmin()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("success", false, "message", "Admin access required"));
+            }
+
+            String statusStr = reviewData.get("status");
+            String adminNotes = reviewData.get("adminNotes");
+            ClaimStatus status = ClaimStatus.valueOf(statusStr);
+            String reviewedBy = LoginUserUtil.getLoginUser().getUsername();
+
+            Claim claim = claimService.updateClaimStatus(claimId, status, adminNotes, reviewedBy);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("claim", claimToDto(claim));
+            response.put("message", "Claim status updated to " + status);
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Failed to review claim", e);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("success", false, "message", "Failed to review claim: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/claims/check/{itemId}")
+    public ResponseEntity<?> checkIfUserClaimedItem(@PathVariable UUID itemId) {
+        try {
+            User user = LoginUserUtil.getLoginUser();
+            User claimant = userService.findByUsername(user.getUsername());
+            LostFoundItem item = lostFoundItemService.findItemById(itemId);
+            boolean hasClaimed = claimService.hasUserClaimedItem(item, claimant);
+
+            return ResponseEntity.ok(Map.of("success", true, "hasClaimed", hasClaimed));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of("success", true, "hasClaimed", false));
+        }
+    }
+
     // ============ Helper Methods ============
+
+    /**
+     * Convert item to DTO, hiding description and reporter info from non-admin
+     * users.
+     */
+    private Map<String, Object> itemToDto(LostFoundItem item, boolean isAdmin) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", item.getId());
+        dto.put("type", item.getType());
+        dto.put("title", item.getTitle());
+        dto.put("lostFoundDate", item.getLostFoundDate());
+        dto.put("lostFoundLocation", item.getLostFoundLocation());
+        dto.put("category", item.getCategory());
+        dto.put("imageUrl", item.getImageUrl());
+        dto.put("latitude", item.getLatitude());
+        dto.put("longitude", item.getLongitude());
+        dto.put("collectionLocation", item.getCollectionLocation());
+
+        Long collectedCount = claimRepository.countByItemAndStatus(item, ClaimStatus.COLLECTED);
+        dto.put("isCollected", collectedCount != null && collectedCount > 0);
+
+        boolean isOwner = false;
+        if (!isAdmin) {
+            try {
+                User currentUser = LoginUserUtil.getLoginUser();
+                isOwner = currentUser != null
+                        && item.getUser() != null
+                        && item.getUser().getId().equals(currentUser.getId());
+            } catch (Exception e) {
+                isOwner = false;
+            }
+        }
+
+        if (isAdmin || isOwner) {
+            dto.put("createdBy", item.getCreatedBy());
+            dto.put("modifiedBy", item.getModifiedBy());
+        }
+
+        // Comments visible to all
+        if (item.getComments() != null) {
+            dto.put("comments", item.getComments().stream().map(c -> {
+                Map<String, Object> commentDto = new HashMap<>();
+                commentDto.put("id", c.getId());
+                commentDto.put("commentText", c.getText());
+                commentDto.put("createdBy", c.getAuthorName());
+                return commentDto;
+            }).collect(java.util.stream.Collectors.toList()));
+        }
+
+        // Description and reporter info: ONLY visible to admin
+        if (isAdmin) {
+            dto.put("description", item.getDescription());
+            dto.put("descriptionAddedBy", item.getDescriptionAddedBy());
+            dto.put("descriptionAddedAt",
+                    item.getDescriptionAddedAt() != null ? item.getDescriptionAddedAt().toString() : null);
+            dto.put("reporterName", item.getReporterName());
+            dto.put("reporterEmail", item.getReporterEmail());
+            dto.put("reporterPhoneNo", item.getReporterPhoneNo());
+        } else {
+            dto.put("description", ""); // hidden from regular users
+            dto.put("descriptionAddedBy", null);
+            dto.put("descriptionAddedAt", null);
+            dto.put("reporterName", "");
+            dto.put("reporterEmail", "");
+            dto.put("reporterPhoneNo", "");
+        }
+
+        return dto;
+    }
+
+    private Map<String, Object> matchToDto(hyk.springframework.lostandfoundsystem.domain.ItemMatch match) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", match.getId());
+        dto.put("confidenceScore", match.getConfidenceScore());
+        dto.put("imageSimilarity", match.getImageSimilarity());
+        dto.put("textSimilarity", match.getTextSimilarity());
+        dto.put("categoryMatch", match.getCategoryMatch());
+        dto.put("matchLevel", match.getMatchLevel());
+        dto.put("isConfirmed", match.getIsConfirmed());
+        dto.put("isDismissed", match.getIsDismissed());
+        dto.put("createdAt", match.getCreatedAt() != null ? match.getCreatedAt().toString() : null);
+        dto.put("confirmedAt", match.getConfirmedAt() != null ? match.getConfirmedAt().toString() : null);
+
+        boolean isAdmin = LoginUserUtil.isAdmin();
+        User currentUser = null;
+        try {
+            currentUser = LoginUserUtil.getLoginUser();
+        } catch (Exception e) {
+            currentUser = null;
+        }
+
+        boolean isLostItemOwner = currentUser != null
+                && match.getLostItem() != null
+                && match.getLostItem().getUser() != null
+                && match.getLostItem().getUser().getId().equals(currentUser.getId());
+        boolean isFoundItemOwner = currentUser != null
+                && match.getFoundItem() != null
+                && match.getFoundItem().getUser() != null
+                && match.getFoundItem().getUser().getId().equals(currentUser.getId());
+
+        boolean canConfirm = isLostItemOwner
+                && Boolean.FALSE.equals(match.getIsConfirmed())
+                && Boolean.FALSE.equals(match.getIsDismissed());
+
+        boolean foundItemCollected = false;
+        if (match.getFoundItem() != null) {
+            Long collectedCount = claimRepository.countByItemAndStatus(match.getFoundItem(), ClaimStatus.COLLECTED);
+            foundItemCollected = collectedCount != null && collectedCount > 0;
+        }
+        boolean canClaim = isLostItemOwner
+                && Boolean.TRUE.equals(match.getIsConfirmed())
+                && !foundItemCollected;
+
+        dto.put("isLostItemOwner", isLostItemOwner);
+        dto.put("isFoundItemOwner", isFoundItemOwner);
+        dto.put("canConfirm", canConfirm);
+        dto.put("canClaim", canClaim);
+
+        if (match.getLostItem() != null) {
+            dto.put("lostItem", itemToDto(match.getLostItem(), isAdmin));
+        }
+
+        if (match.getFoundItem() != null) {
+            dto.put("foundItem", itemToDto(match.getFoundItem(), isAdmin));
+        }
+
+        return dto;
+    }
+
+    private Map<String, Object> notificationToDto(
+            hyk.springframework.lostandfoundsystem.domain.Notification notification) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", notification.getId());
+        dto.put("title", notification.getTitle());
+        dto.put("message", notification.getMessage());
+        dto.put("notificationType", notification.getNotificationType());
+        dto.put("isRead", notification.getIsRead());
+        dto.put("createdAt", notification.getCreatedAt() != null ? notification.getCreatedAt().toString() : null);
+        dto.put("readAt", notification.getReadAt() != null ? notification.getReadAt().toString() : null);
+
+        if (notification.getRelatedMatch() != null) {
+            dto.put("matchId", notification.getRelatedMatch().getId());
+        }
+        if (notification.getRelatedItem() != null) {
+            dto.put("itemId", notification.getRelatedItem().getId());
+        }
+
+        return dto;
+    }
+
+    private Map<String, Object> claimToDto(Claim claim) {
+        Map<String, Object> dto = new HashMap<>();
+        dto.put("id", claim.getId());
+        dto.put("status", claim.getStatus());
+        dto.put("questionsAndAnswers", claim.getQuestionsAndAnswers());
+        dto.put("adminNotes", claim.getAdminNotes());
+        dto.put("reviewedBy", claim.getReviewedBy());
+        dto.put("createdAt", claim.getCreatedAt() != null ? claim.getCreatedAt().toString() : null);
+        dto.put("updatedAt", claim.getUpdatedAt() != null ? claim.getUpdatedAt().toString() : null);
+        dto.put("reviewedAt", claim.getReviewedAt() != null ? claim.getReviewedAt().toString() : null);
+
+        if (claim.getItem() != null) {
+            Map<String, Object> itemDto = new HashMap<>();
+            itemDto.put("id", claim.getItem().getId());
+            itemDto.put("title", claim.getItem().getTitle());
+            itemDto.put("category", claim.getItem().getCategory());
+            itemDto.put("imageUrl", claim.getItem().getImageUrl());
+            itemDto.put("type", claim.getItem().getType());
+            itemDto.put("lostFoundLocation", claim.getItem().getLostFoundLocation());
+            // Admin can see description
+            if (LoginUserUtil.isAdmin()) {
+                itemDto.put("description", claim.getItem().getDescription());
+            }
+            dto.put("item", itemDto);
+        }
+
+        boolean includeClaimant = LoginUserUtil.isAdmin();
+        if (!includeClaimant) {
+            try {
+                User currentUser = LoginUserUtil.getLoginUser();
+                includeClaimant = claim.getClaimant() != null
+                        && currentUser != null
+                        && claim.getClaimant().getId().equals(currentUser.getId());
+            } catch (Exception e) {
+                includeClaimant = false;
+            }
+        }
+
+        if (includeClaimant && claim.getClaimant() != null) {
+            dto.put("claimant", getUserDto(claim.getClaimant()));
+        }
+
+        return dto;
+    }
 
     private void checkPermission(LostFoundItem lostFoundItem) {
         if (!LoginUserUtil.isAdmin() &&
