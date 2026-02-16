@@ -7,7 +7,7 @@ class ApiConfig {
   static const String deviceUrl = 'http://192.168.68.101:8080';
 
   // TODO: Replace this with your deployed backend URL (from Render/Railway)
-  static const String productionUrl = 'https://your-app-name.onrender.com';
+  static const String productionUrl = 'https://recq.onrender.com';
 
   // Set to true when testing on physical device, false for emulator
   static const bool usePhysicalDevice = true;
