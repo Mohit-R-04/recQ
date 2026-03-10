@@ -4,18 +4,28 @@ A comprehensive Lost & Found management system with a **Spring Boot** backend an
 
 ## 🌟 Overview
 
-This system allows users to report and find lost items through a modern mobile application. It features user authentication, item management with images, comments, and filtering capabilities.
+This system allows users to report and find lost items through a modern mobile application. It includes an ML service for classification, embeddings, and item matching, plus user authentication, item management with images, comments, and filtering capabilities.
 
 ## 🏗️ Architecture
 
 ### Backend
-- **Framework:** Spring Boot 2.x
-- **Language:** Java 11
+
+- **Framework:** Spring Boot 2.6.2
+- **Language:** Java 17
 - **Database:** H2 (configurable for MySQL/PostgreSQL)
 - **Security:** Spring Security with session-based auth
 - **API:** RESTful JSON API
 
+### ML Service
+
+- **Framework:** Flask
+- **Language:** Python
+- **ML:** TensorFlow (classification + image embeddings), SBERT text embeddings
+- **Purpose:** Image/text embeddings, matching, and question generation
+- **Default port:** 5000
+
 ### Frontend
+
 - **Framework:** Flutter 3.10.7+
 - **Language:** Dart
 - **State Management:** Provider
@@ -24,41 +34,47 @@ This system allows users to report and find lost items through a modern mobile a
 
 ## ✨ Features
 
-### User Management
-- ✅ User registration and login
-- ✅ Role-based access (Admin/User)
-- ✅ Profile management
-- ✅ Session persistence
+### Core User Flow
 
-### Item Management
-- ✅ Report lost items
-- ✅ Report found items
-- ✅ Upload item images
-- ✅ View all items with filters
-- ✅ Detailed item view
-- ✅ Edit/delete own items
-- ✅ Admin can manage all items
+- ✅ Register/login with session-based auth
+- ✅ Report lost/found items with images
+- ✅ Browse and filter items (All/Lost/Found/My/Given)
+- ✅ View item details and comments
 
-### Social Features
-- ✅ Comment on items
-- ✅ View all comments
-- ✅ Contact reporter directly
+### Matching & Claims
+
+- ✅ ML-powered matching (image + text)
+- ✅ Match confirmation and dismissal
+- ✅ Claim workflow with verification questions
+- ✅ Admin review of claims and status updates
+
+### Notifications
+
+- ✅ Match and claim notifications
+- ✅ Unread counts and mark-as-read
+
+### Admin Capabilities
+
+- ✅ Manage all items
+- ✅ Review and resolve claims
+- ✅ View restricted item details
 
 ### UI/UX
+
 - ✅ Modern Material Design 3
 - ✅ Gradient backgrounds
-- ✅ Smooth animations
 - ✅ Pull-to-refresh
-- ✅ Loading states
-- ✅ Error handling
+- ✅ Loading and error states
 - ✅ Responsive layouts
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Java 11 or higher
+
+- Java 17
 - Maven 3.6+
 - Flutter 3.10.7+
+- Python 3 + pip (for `ml_service`)
 - Android Studio / Xcode (for mobile development)
 
 ### Option 1: Using the Start Script
@@ -70,19 +86,38 @@ chmod +x start.sh
 # Run the script
 ./start.sh
 
+# In another terminal, start the ML service
+cd ml_service
+python -m pip install -r requirements.txt
+python app.py
+
 # In another terminal, run Flutter app
 cd flutter_app
 flutter run
 ```
 
+> Note: `start.sh`/`start-*.sh` are bash scripts. On Windows, run them via Git Bash/WSL or use the manual steps below.
+
 ### Option 2: Manual Setup
 
 **Terminal 1 - Start Backend:**
+
 ```bash
 ./mvnw spring-boot:run
 ```
 
-**Terminal 2 - Run Flutter App:**
+Ensure the uploads folder exists at `src/main/resources/static/uploads`.
+
+**Terminal 2 - Start ML Service:**
+
+```bash
+cd ml_service
+python -m pip install -r requirements.txt
+python app.py
+```
+
+**Terminal 3 - Run Flutter App:**
+
 ```bash
 cd flutter_app
 flutter pub get
@@ -90,6 +125,51 @@ flutter run
 ```
 
 The backend will be available at `http://localhost:8080`
+The ML service will be available at `http://localhost:5000`
+
+## 🧭 Workflows
+
+### Reporting an Item
+
+1. User reports a lost/found item with title, description, category, and image.
+2. The ML service performs image classification (using EfficientNetB0) to suggest item category based on the uploaded image.
+3. Backend stores the item and image under `static/uploads`.
+4. Backend requests embeddings from the ML service.
+5. Matches are generated for the new item.
+
+### Matching & Confirmation
+
+1. System proposes matches based on ML similarity.
+2. Lost-item owner can confirm a match or dismiss it.
+3. Confirmed matches unlock the claim workflow.
+
+### Claiming an Item
+
+1. Lost-item owner submits a claim for the found item.
+2. ML service generates verification questions for the claim.
+3. Admin reviews the claim and approves or rejects it.
+
+### Notifications
+
+1. Users receive notifications for matches and claim updates.
+2. Notifications can be marked as read or cleared.
+
+## 🧰 Developer Workflows
+
+**Scripts (bash):**
+
+- `./start.sh` - Quick start (backend + Flutter setup)
+- `./start-backend.sh` - Backend only
+- `./start-frontend.sh` - Flutter only (prompts for device)
+
+**Common commands:**
+
+```bash
+./mvnw clean package -DskipTests
+cd flutter_app
+flutter pub get
+flutter run
+```
 
 ### Authentication
 
@@ -101,8 +181,9 @@ This system uses **Spring Security** for secure user authentication:
 - Beautiful Flutter login UI
 
 **Default Admin Credentials:**
+
 - Username: `admin`
-- Password: `Admin11@`
+- Password: `Admin@123`
 
 ## 📱 Running on Different Platforms
 
@@ -128,42 +209,28 @@ flutter run -d windows
 flutter run -d linux
 ```
 
-## 📊 Project Statistics
-
-### Backend
-- **Controllers:** 1 (REST API only)
-- **Services:** 4
-- **Repositories:** 5
-- **Domain Models:** 8
-- **REST Endpoints:** 12+
-- **Architecture:** Pure REST API (no web UI)
-
-### Flutter App
-- **Screens:** 7
-- **Models:** 3
-- **Services:** 1
-- **Providers:** 1
-- **Total Lines of Code:** ~2,500
-- **Dependencies:** 78 packages
-
 ## 📁 Project Structure
 
 ```
 recQ/
-├── src/                                    # Spring Boot Backend
+├── src/                                    # Spring Boot backend
 │   ├── main/
 │   │   ├── java/.../lostandfoundsystem/
 │   │   │   ├── config/                    # Security, CORS
 │   │   │   ├── domain/                    # Entities
 │   │   │   ├── repositories/              # Data access
 │   │   │   ├── services/                  # Business logic
-│   │   │   ├── web/controller/            # REST API Controller
+│   │   │   ├── web/controller/            # REST API controller
 │   │   │   └── LostAndFoundSystemApplication.java
 │   │   └── resources/
 │   │       ├── static/uploads/            # Uploaded images
 │   │       └── application.properties
 │   └── test/
-├── flutter_app/                           # Flutter Frontend
+├── ml_service/                             # Flask ML service
+│   ├── app.py                              # API entry point
+│   ├── requirements.txt
+│   └── models/
+├── flutter_app/                            # Flutter frontend
 │   ├── lib/
 │   │   ├── config/                        # API config
 │   │   ├── models/                        # Data models
@@ -171,42 +238,111 @@ recQ/
 │   │   ├── screens/                       # UI screens
 │   │   ├── services/                      # API services
 │   │   └── main.dart
-│   ├── android/                           # Android config
-│   ├── ios/                               # iOS config
-│   ├── web/                               # Web config
+│   ├── android/
+│   ├── ios/
+│   ├── web/
 │   └── pubspec.yaml
-├── pom.xml                                # Maven config
-├── start.sh                               # Quick start script
-├── CLEANUP_SUMMARY.md                     # Cleanup details
-├── MIGRATION_SUMMARY.md                   # Migration details
-├── FLUTTER_MIGRATION.md                   # Complete guide
-└── README.md                              # This file
+├── pom.xml                                 # Maven config
+├── start.sh                                # Quick start script
+├── start-backend.sh                        # Backend script
+├── start-frontend.sh                       # Frontend script
+├── Dockerfile
+├── CLEANUP_SUMMARY.md
+├── MIGRATION_SUMMARY.md
+├── FLUTTER_MIGRATION.md
+└── README.md
 ```
 
 ## 🔌 API Endpoints
 
-### Authentication
+### Backend (Spring Boot)
+
+**Authentication**
+
 ```
-POST   /api/auth/login          - User login
-POST   /api/auth/register       - User registration
-POST   /api/auth/logout         - User logout
-GET    /api/auth/me             - Get current user
+POST   /api/auth/login
+POST   /api/auth/register
+POST   /api/auth/logout
+GET    /api/auth/me
+POST   /api/auth/send-otp
+POST   /api/auth/verify-otp
+GET    /api/auth/can-resend-otp
+POST   /api/auth/reset-password
 ```
 
-### Items
+**Items & Comments**
+
 ```
-GET    /api/items               - Get all items
-GET    /api/items/{id}          - Get item by ID
-GET    /api/items/user/{id}     - Get user's items
-POST   /api/items               - Create item
-PUT    /api/items/{id}          - Update item
-DELETE /api/items/{id}          - Delete item
-POST   /api/items/upload        - Upload image
+GET    /api/items
+GET    /api/items/{itemId}
+GET    /api/items/user/{userId}
+POST   /api/items
+POST   /api/items/upload
+PUT    /api/items/{itemId}
+PUT    /api/items/{itemId}/description
+DELETE /api/items/{itemId}
+POST   /api/items/{itemId}/comments
+POST   /api/items/{itemId}/find-matches
 ```
 
-### Comments
+**Matches**
+
 ```
-POST   /api/items/{id}/comments - Add comment
+GET    /api/matches
+GET    /api/matches/all
+GET    /api/matches/{matchId}
+POST   /api/matches/{matchId}/confirm
+POST   /api/matches/{matchId}/dismiss
+GET    /api/matches/count
+```
+
+**Notifications**
+
+```
+GET    /api/notifications
+GET    /api/notifications/unread
+GET    /api/notifications/count
+POST   /api/notifications/{notificationId}/read
+POST   /api/notifications/read-all
+DELETE /api/notifications/{notificationId}
+```
+
+**Claims**
+
+```
+GET    /api/claims/questions/{itemId}
+POST   /api/claims
+GET    /api/claims/my
+GET    /api/claims/item/{itemId}
+GET    /api/claims/admin/all
+GET    /api/claims/{claimId}
+POST   /api/claims/{claimId}/review
+GET    /api/claims/check/{itemId}
+```
+
+### ML Service (Flask)
+
+**What it does**
+
+- Image classification for item category mapping (EfficientNetB0)
+- Text embeddings (SBERT) and image embeddings (EfficientNetB0)
+- Match scoring and retrieval
+- Claim question generation (templates + optional T5)
+
+```
+GET    /health
+POST   /classify
+GET    /categories
+POST   /embeddings/text
+POST   /embeddings/image
+POST   /embeddings/item
+POST   /matching/register
+POST   /matching/find
+POST   /matching/compare
+GET    /matching/all
+DELETE /matching/unregister/<item_id>
+GET    /matching/stats
+POST   /generate-questions
 ```
 
 ## ⚙️ Configuration
@@ -241,6 +377,15 @@ class ApiConfig {
 }
 ```
 
+### ML Service Configuration
+
+The ML service reads optional environment variables from `ml_service/.env`:
+
+```
+QG_USE_TRANSFORMER=true   # Enable transformer-based question generation
+QG_T5_MODEL=valhalla/t5-small-qg-hl
+```
+
 ## 🧪 Testing
 
 ### Test Backend API
@@ -249,7 +394,7 @@ class ApiConfig {
 # Login
 curl -X POST http://localhost:8080/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin"}'
+  -d '{"username":"admin","password":"Admin@123"}'
 
 # Get all items
 curl http://localhost:8080/api/items
@@ -280,6 +425,7 @@ java -jar target/lost-and-found-system-0.0.1-SNAPSHOT.jar
 ### Flutter
 
 **Android:**
+
 ```bash
 cd flutter_app
 flutter build apk --release
@@ -287,12 +433,14 @@ flutter build apk --release
 ```
 
 **iOS:**
+
 ```bash
 flutter build ios --release
 # Then archive via Xcode
 ```
 
 **Web:**
+
 ```bash
 flutter build web --release
 # Deploy build/web folder
@@ -303,22 +451,39 @@ flutter build web --release
 ### Backend Issues
 
 **Port 8080 already in use:**
+
 ```bash
 lsof -ti:8080 | xargs kill -9
 ```
 
+**Windows alternative:**
+
+```powershell
+netstat -ano | findstr :8080
+taskkill /PID <PID> /F
+```
+
+**Port 5000 already in use (ML service):**
+
+```bash
+lsof -ti:5000 | xargs kill -9
+```
+
 **Database errors:**
+
 - Check `application.properties`
 - Access H2 console at `/h2-console`
 
 ### Flutter Issues
 
 **Cannot connect to backend:**
+
 - Android emulator: Use `10.0.2.2:8080`
 - iOS simulator: Use `localhost:8080`
 - Physical device: Use your machine's IP
 
 **Dependencies not resolving:**
+
 ```bash
 cd flutter_app
 flutter clean
@@ -326,11 +491,19 @@ flutter pub get
 ```
 
 **Build errors:**
+
 ```bash
 flutter clean
 flutter pub get
 flutter run
 ```
+
+### ML Service Issues
+
+**First run is slow:**
+
+- The service downloads ML models (TensorFlow, SBERT, optional T5) on first run.
+- If you don't need transformer-based question generation, set `QG_USE_TRANSFORMER=false`.
 
 ## 📚 Documentation
 
@@ -362,6 +535,7 @@ flutter run
 ## 🚀 Next Steps
 
 ### Recommended Enhancements
+
 1. **Authentication:** Implement JWT tokens
 2. **Features:** Add search, push notifications, real-time updates
 3. **UI:** Add dark mode, animations, image gallery
@@ -399,6 +573,7 @@ This project is an educational Lost & Found System.
 ## 📞 Support
 
 For issues:
+
 1. Check the troubleshooting section
 2. Review documentation files
 3. Check backend and Flutter logs
