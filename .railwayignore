@@ -1,0 +1,30 @@
+.git
+.github
+.idea
+.vscode
+
+# Backend build outputs
+target
+build
+*.log
+
+# Frontend app is not needed for backend deployment
+flutter_app
+
+# Optional local ML service is deployed separately
+ml_service
+
+# Local data and temp files
+data
+*.db
+*.sqlite
+*.sqlite3
+*.h2.db
+h2.mv.db
+h2.trace.db
+
+# Docs and local scripts not needed in runtime image
+*.md
+start.sh
+start-backend.sh
+start-frontend.sh

@@ -62,6 +62,9 @@ public class RestApiController {
     @Value("${ml.service.url:http://localhost:5000}")
     private String mlServiceUrl;
 
+    @Value("${app.upload.dir:./uploads}")
+    private String uploadDir;
+
     // ============ Authentication APIs ============
 
     @PostMapping("/auth/login")
@@ -402,11 +405,11 @@ public class RestApiController {
                 return ResponseEntity.badRequest().body(response);
             }
 
-            String folder = "src/main/resources/static/uploads/";
-            byte[] bytes = file.getBytes();
             String filename = System.currentTimeMillis() + "_" + file.getOriginalFilename();
-            Path path = Paths.get(folder + filename);
-            Files.write(path, bytes);
+            Path uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Files.createDirectories(uploadPath);
+            Path destination = uploadPath.resolve(filename);
+            Files.write(destination, file.getBytes());
 
             String imageUrl = "/uploads/" + filename;
 

@@ -98,41 +98,52 @@ def map_predicted_class_to_backend_category(predicted_class: str) -> str:
 # LOAD MODEL
 # ======================================================
 print("Loading model...")
+model = None
+model_loaded = False
+
 try:
-    model_load_path = MODEL_PATH
-    packed_model_path = None
+    if not os.path.exists(MODEL_PATH):
+        print(f"Model not found at {MODEL_PATH}. Classification endpoints will be unavailable.")
+    else:
+        model_load_path = MODEL_PATH
+        packed_model_path = None
 
-    if os.path.isdir(MODEL_PATH):
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".keras")
-        tmp.close()
-        packed_model_path = tmp.name
-        with zipfile.ZipFile(packed_model_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for root, _, files in os.walk(MODEL_PATH):
-                for filename in files:
-                    file_path = os.path.join(root, filename)
-                    arcname = os.path.relpath(file_path, MODEL_PATH)
-                    zf.write(file_path, arcname)
-        model_load_path = packed_model_path
+        if os.path.isdir(MODEL_PATH):
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".keras")
+            tmp.close()
+            packed_model_path = tmp.name
+            with zipfile.ZipFile(packed_model_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for root, _, files in os.walk(MODEL_PATH):
+                    for filename in files:
+                        file_path = os.path.join(root, filename)
+                        arcname = os.path.relpath(file_path, MODEL_PATH)
+                        zf.write(file_path, arcname)
+            model_load_path = packed_model_path
 
-    # Try loading with compile=False to avoid optimizer compatibility issues
-    model = tf.keras.models.load_model(model_load_path, compile=False)
-    # Recompile with compatible settings
-    model.compile(
-        optimizer='adam',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
+        # Try loading with compile=False to avoid optimizer compatibility issues
+        model = tf.keras.models.load_model(model_load_path, compile=False)
+        # Recompile with compatible settings
+        model.compile(
+            optimizer='adam',
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        model_loaded = True
 except Exception as e:
     print(f"Error loading model with tf.keras: {e}")
     print("Trying alternative loading method...")
-    # Fallback: try loading without custom objects
-    import keras
-    model = keras.models.load_model(model_load_path, compile=False)
-    model.compile(
-        optimizer='adam',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
+    try:
+        # Fallback: try loading without custom objects
+        import keras
+        model = keras.models.load_model(model_load_path, compile=False)
+        model.compile(
+            optimizer='adam',
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy']
+        )
+        model_loaded = True
+    except Exception as fallback_error:
+        print(f"Fallback model loading failed: {fallback_error}")
 finally:
     if 'packed_model_path' in locals() and packed_model_path is not None:
         try:
@@ -143,7 +154,10 @@ finally:
 with open(CLASS_NAMES_PATH) as f:
     class_names = [line.strip() for line in f]
 
-print("Model loaded successfully")
+if model_loaded:
+    print("Model loaded successfully")
+else:
+    print("Model not loaded; classification disabled")
 print("Classes:", class_names)
 
 # ======================================================
@@ -198,6 +212,12 @@ def health():
 
 @app.route('/classify', methods=['POST'])
 def classify():
+    if not model_loaded:
+        return jsonify({
+            'success': False,
+            'message': 'Classification model is not available on server'
+        }), 503
+
     if 'image' not in request.files:
         return jsonify({
             'success': False,
@@ -599,5 +619,5 @@ def generate_verification_questions():
 # MAIN
 # ======================================================
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
+    port = int(os.getenv("PORT", "5000"))
+    app.run(host='0.0.0.0', port=port, debug=False)
