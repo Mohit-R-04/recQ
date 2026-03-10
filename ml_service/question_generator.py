@@ -23,10 +23,10 @@ except Exception:
     torch = None
 
 try:
-    from transformers import T5ForConditionalGeneration, T5Tokenizer
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 except Exception:
-    T5ForConditionalGeneration = None
-    T5Tokenizer = None
+    AutoModelForSeq2SeqLM = None
+    AutoTokenizer = None
 
 
 # ======================================================
@@ -189,7 +189,10 @@ def _get_nlp():
         return None
 
 
-_DEFAULT_T5_MODEL_NAME = "iarfmoose/t5-base-question-generator"
+MODEL_FLAN_T5 = "google/flan-t5-base"
+MODEL_VALHALLA_QG_HL = "valhalla/t5-small-qg-hl"
+MODEL_LEGACY_T5 = "iarfmoose/t5-base-question-generator"
+MODEL_USED = MODEL_FLAN_T5
 _T5_LOADED_MODEL_NAME = None
 _T5_TOKENIZER = None
 _T5_MODEL = None
@@ -199,26 +202,26 @@ _T5_DEVICE = None
 def _get_t5():
     global _T5_LOADED_MODEL_NAME, _T5_TOKENIZER, _T5_MODEL, _T5_DEVICE
 
-    requested_model_name = os.getenv("QG_T5_MODEL", _DEFAULT_T5_MODEL_NAME).strip() or _DEFAULT_T5_MODEL_NAME
+    model_used = MODEL_USED
 
     if (
         _T5_MODEL is not None
         and _T5_TOKENIZER is not None
-        and _T5_LOADED_MODEL_NAME == requested_model_name
+        and _T5_LOADED_MODEL_NAME == model_used
     ):
         return _T5_TOKENIZER, _T5_MODEL, _T5_DEVICE
 
-    if torch is None or T5ForConditionalGeneration is None or T5Tokenizer is None:
+    if torch is None or AutoModelForSeq2SeqLM is None or AutoTokenizer is None:
         return None, None, None
 
     try:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        tokenizer = T5Tokenizer.from_pretrained(requested_model_name)
-        model = T5ForConditionalGeneration.from_pretrained(requested_model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_used)
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_used)
         model.to(device)
         model.eval()
 
-        _T5_LOADED_MODEL_NAME = requested_model_name
+        _T5_LOADED_MODEL_NAME = model_used
         _T5_TOKENIZER = tokenizer
         _T5_MODEL = model
         _T5_DEVICE = device
@@ -280,9 +283,34 @@ def filter_questions(
         if not q:
             continue
 
+        # Remove leading punctuation/noise from model output fragments.
+        q = re.sub(r"^[^A-Za-z0-9]+", "", q).strip()
+        if not q:
+            continue
+
         q_lower = q.lower()
 
         if "category" in q_lower or "label" in q_lower or "class" in q_lower:
+            continue
+
+        # Drop generic low-value prompts often produced by base instruction models.
+        if re.search(r"\bname\s+of\s+the\s+(item|object|thing)\b", q_lower):
+            continue
+        if "lost and found" in q_lower:
+            continue
+        if "lost" in q_lower and "found" in q_lower:
+            continue
+        if "object is missing" in q_lower or "item is missing" in q_lower:
+            continue
+        if "you claim" in q_lower:
+            continue
+        if re.search(r"\bmost\s+common\s+physical\s+attributes\b", q_lower):
+            continue
+        if re.search(r"\bwhat\s+are\s+their\s+physical\s+attributes\b", q_lower):
+            continue
+        if re.search(r"\bwhere\s+does\s+it\s+come\s+from\b", q_lower):
+            continue
+        if re.search(r"\bname\s+and\s+number\s+of\s+tags\b", q_lower):
             continue
 
         if re.search(r"\bwhat\s+is\s+the\s+name\s+of\b", q_lower) and re.search(r"\bcategory\b|\bclass\b|\blabel\b", q_lower):
@@ -308,6 +336,10 @@ def filter_questions(
                 q = q[:-1] + "?"
             else:
                 q = q + "?"
+
+        # Keep only sentence-like question forms.
+        if not re.match(r"^(what|which|where|when|who|whom|whose|how|is|are|do|does|did|can|could|would|should|has|have)\b", q.lower()):
+            continue
 
         if len([w for w in q.split(" ") if w]) < min_words:
             continue
@@ -525,13 +557,27 @@ def generate_questions_transformer(
 
     context = " ".join([p.strip() for p in context_parts if p.strip()])
     answers = extract_keywords(f"{title} {description}".strip())[: max(1, min(int(num_candidates), 8))]
-    model_name = (os.getenv("QG_T5_MODEL", _DEFAULT_T5_MODEL_NAME) or "").strip().lower()
+    model_name = MODEL_USED.strip().lower()
     uses_highlight_format = "valhalla/" in model_name and ("qg-hl" in model_name or "highlight" in model_name)
+    uses_flan_style = "flan-t5" in model_name
 
     try:
         questions: List[str] = []
         prompts = []
-        if answers:
+        if uses_flan_style:
+            focus_keywords = ", ".join(answers[:6]) if answers else "brand, color, material, size, unique marks"
+            prompts.append(
+                "Generate 5 short ownership-verification questions for a lost-item claim check. "
+                "Ask only about non-sensitive physical details. "
+                "Do not ask for the item name. Do not ask generic lost/found questions. "
+                "Each question must target a different attribute.\n"
+                f"Item title: {title or 'N/A'}\n"
+                f"Category: {category or 'N/A'}\n"
+                f"Description: {description or 'N/A'}\n"
+                f"Focus attributes: {focus_keywords}\n"
+                "Questions:"
+            )
+        elif answers:
             for ans in answers:
                 if uses_highlight_format:
                     prompts.append(f"generate question: <hl> {ans} <hl> {context}")
@@ -552,9 +598,20 @@ def generate_questions_transformer(
             )
             inputs = {k: v.to(device) for k, v in inputs.items()}
 
-            with torch.no_grad():
-                outputs = model.generate(
-                    **inputs,
+            if uses_flan_style:
+                generation_kwargs = dict(
+                    max_length=120,
+                    min_length=20,
+                    num_beams=1,
+                    do_sample=True,
+                    top_p=0.92,
+                    temperature=0.9,
+                    num_return_sequences=3,
+                    no_repeat_ngram_size=3,
+                    repetition_penalty=1.1,
+                )
+            else:
+                generation_kwargs = dict(
                     max_length=72,
                     min_length=10,
                     num_beams=num_beams,
@@ -563,6 +620,9 @@ def generate_questions_transformer(
                     no_repeat_ngram_size=3,
                     length_penalty=1.1,
                 )
+
+            with torch.no_grad():
+                outputs = model.generate(**inputs, **generation_kwargs)
 
             decoded = [tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
             for text in decoded:
@@ -697,10 +757,13 @@ def generate_questions(title: str, category: str, description: str = "",
             num_candidates=max(8, min(16, num_questions * 3)),
             num_beams=5,
         )
+        print(f"[QG] Transformer raw candidates ({len(transformer_candidates)}): {transformer_candidates}")
         transformer_filtered = filter_questions(
             transformer_candidates,
             required_keywords=None,
         )
+        print(f"[QG] Transformer after security filter ({len(transformer_filtered)}): {transformer_filtered}")
+        # Prefer context-relevant questions when available; otherwise keep fallback candidates.
         transformer_hint_filtered = _filter_transformer_questions(
             transformer_filtered,
             category=category,
@@ -713,7 +776,9 @@ def generate_questions(title: str, category: str, description: str = "",
             print(f"[QG] transformer_candidates={len(transformer_candidates)} filtered=0 category={category} title='{title}'")
         for q in transformer_filtered:
             rewritten = _rewrite_transformer_question(q, category=category)
-            add_question(rewritten or q, "transformer")
+            final_q = rewritten or q
+            print(f"[QG] Adding transformer question: {final_q}")
+            add_question(final_q, "transformer")
 
     # 3. Generate keyword-based questions
     for keyword in all_keywords:
@@ -767,10 +832,12 @@ def generate_questions(title: str, category: str, description: str = "",
     if "universal" in by_type:
         final_questions.append(by_type["universal"][0])
 
-    # Add transformer-based (up to 3)
+    # Add transformer-based (up to 4, prioritize to ensure at least some)
     if "transformer" in by_type:
-        for q in by_type["transformer"][:3]:
+        print(f"[QG] Available transformer questions: {len(by_type['transformer'])}")
+        for q in by_type["transformer"][:4]:
             if len(final_questions) < num_questions:
+                print(f"[QG] Selected transformer: {q['question']}")
                 final_questions.append(q)
 
     # Add keyword-based (up to 2)
